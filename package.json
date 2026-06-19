@@ -1,0 +1,70 @@
+{
+  "name": "attestload",
+  "version": "0.1.0",
+  "description": "Attest-before-load gate for coding agents: sign AI agent Skills and MCP servers into verifiable SBOM + provenance attestations, and refuse to load unattested code.",
+  "type": "module",
+  "license": "MIT",
+  "author": "SuperMarioYL",
+  "homepage": "https://github.com/SuperMarioYL/attestload#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SuperMarioYL/attestload.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SuperMarioYL/attestload/issues"
+  },
+  "keywords": [
+    "sbom",
+    "provenance",
+    "sigstore",
+    "slsa",
+    "attestation",
+    "supply-chain",
+    "mcp",
+    "coding-agent",
+    "skill",
+    "cli"
+  ],
+  "bin": {
+    "attestload": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@sigstore/sign": "^3",
+    "@sigstore/verify": "^2",
+    "commander": "^12",
+    "yaml": "^2",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^2"
+  }
+}

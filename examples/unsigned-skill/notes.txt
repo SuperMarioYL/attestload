@@ -1,0 +1,3 @@
+A second loose file, so the unsigned example looks like a real flat Skill dir
+(a SKILL.md plus support files) rather than a single document. Nothing here is
+signed — that is the entire point of this example.
