@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 360" width="880" height="360"
+     font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif"
+     role="img" aria-label="架构：attest → SBOM/manifest → sign → verify → policy/loader-guard → allowlist">
+  <defs>
+    <marker id="ah-l" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#B9B9C2"/>
+    </marker>
+    <marker id="ah-block-l" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#C81E1E"/>
+    </marker>
+    <marker id="ah-pass-l" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#10A37F"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="880" height="360" rx="16" fill="#F5F5F7"/>
+
+  <!-- swimlane captions -->
+  <text x="40" y="40" font-size="13" font-weight="700" fill="#92560A" letter-spacing="0.5">PRODUCE · 作者签名</text>
+  <text x="40" y="214" font-size="13" font-weight="700" fill="#A01515" letter-spacing="0.5">CONSUME · 加载前校验</text>
+  <line x1="40" y1="188" x2="840" y2="188" stroke="#E3D3CB" stroke-width="1" stroke-dasharray="4 5"/>
+
+  <!-- ===== PRODUCE lane: attest → sbom/manifest → sign ===== -->
+  <g stroke="#C9C9D0" stroke-width="1.5" fill="none">
+    <line x1="205" y1="108" x2="300" y2="108" marker-end="url(#ah-l)"/>
+    <line x1="505" y1="108" x2="600" y2="108" marker-end="url(#ah-l)"/>
+  </g>
+
+  <!-- attest -->
+  <rect x="40" y="68" width="165" height="80" rx="15" fill="#D97706" fill-opacity="0.12" stroke="#D97706" stroke-width="1.5"/>
+  <text x="122" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#92560A">attest &lt;dir&gt;</text>
+  <text x="122" y="122" text-anchor="middle" font-size="11" fill="#6E6E73">扫描 Skill / MCP 目录</text>
+
+  <!-- sbom + manifest (stacked group) -->
+  <rect x="300" y="60" width="205" height="96" rx="15" fill="#E0541B" fill-opacity="0.10" stroke="#E0541B" stroke-width="1.5"/>
+  <text x="402" y="86" text-anchor="middle" font-size="14" font-weight="600" fill="#B0420F">sbom.ts · manifest.ts</text>
+  <text x="402" y="108" text-anchor="middle" font-size="10.5" fill="#6E6E73">file-manifest → SPDX-lite SBOM</text>
+  <text x="402" y="125" text-anchor="middle" font-size="10.5" fill="#6E6E73">每文件 sha256 · git 溯源 (SLSA-lite)</text>
+  <text x="402" y="142" text-anchor="middle" font-size="10.5" fill="#6E6E73">lockfile 派生 SBOM（MCP server）</text>
+
+  <!-- sign -->
+  <rect x="600" y="68" width="165" height="80" rx="15" fill="#C81E1E" fill-opacity="0.10" stroke="#C81E1E" stroke-width="1.5"/>
+  <text x="682" y="100" text-anchor="middle" font-size="15" font-weight="600" fill="#A01515">sign · Sigstore</text>
+  <text x="682" y="122" text-anchor="middle" font-size="11" fill="#6E6E73">keyless / ed25519 兜底</text>
+
+  <!-- artifact handoff -->
+  <line x1="682" y1="148" x2="682" y2="244" stroke="#C9C9D0" stroke-width="1.5" stroke-dasharray="3 4" fill="none" marker-end="url(#ah-l)"/>
+  <text x="700" y="200" font-size="10.5" fill="#6E6E73">.attestload/attestation.json</text>
+
+  <!-- ===== CONSUME lane: verify → policy/loader-guard → allowlist ===== -->
+  <g stroke="#C9C9D0" stroke-width="1.5" fill="none">
+    <line x1="290" y1="284" x2="385" y2="284" marker-end="url(#ah-l)"/>
+  </g>
+
+  <!-- verify -->
+  <rect x="125" y="244" width="165" height="80" rx="15" fill="#C81E1E" fill-opacity="0.10" stroke="#C81E1E" stroke-width="1.5"/>
+  <text x="207" y="276" text-anchor="middle" font-size="15" font-weight="600" fill="#A01515">verify &lt;dir&gt;</text>
+  <text x="207" y="298" text-anchor="middle" font-size="11" fill="#6E6E73">重算摘要 + 校验签名</text>
+
+  <!-- policy / loader-guard -->
+  <rect x="385" y="244" width="195" height="80" rx="15" fill="#5E5CE6" fill-opacity="0.10" stroke="#5E5CE6" stroke-width="1.5"/>
+  <text x="482" y="272" text-anchor="middle" font-size="14" font-weight="600" fill="#4B3FC4">policy · loader-guard</text>
+  <text x="482" y="293" text-anchor="middle" font-size="10.5" fill="#6E6E73">required / identities · pre-commit hook</text>
+  <text x="482" y="309" text-anchor="middle" font-size="10.5" fill="#6E6E73">Coding Agent 加载前调用</text>
+
+  <!-- allowlist (cold-start feedback) -->
+  <rect x="640" y="244" width="160" height="80" rx="15" fill="#D97706" fill-opacity="0.12" stroke="#D97706" stroke-width="1.5"/>
+  <text x="720" y="276" text-anchor="middle" font-size="14" font-weight="600" fill="#92560A">index · allowlist</text>
+  <text x="720" y="298" text-anchor="middle" font-size="11" fill="#6E6E73">已验证 Skill 白名单 (冷启动)</text>
+
+  <line x1="580" y1="270" x2="640" y2="270" stroke="#C9C9D0" stroke-width="1.5" marker-end="url(#ah-l)" fill="none"/>
+
+  <!-- verdict outputs -->
+  <g stroke-width="2" fill="none">
+    <line x1="482" y1="324" x2="408" y2="350" stroke="#C81E1E" marker-end="url(#ah-block-l)"/>
+    <line x1="482" y1="324" x2="556" y2="350" stroke="#10A37F" marker-end="url(#ah-pass-l)"/>
+  </g>
+  <text x="372" y="354" text-anchor="end" font-size="12.5" font-weight="700" fill="#C81E1E">BLOCKED · exit 1</text>
+  <text x="566" y="354" font-size="12.5" font-weight="700" fill="#0B6B53">PASS · exit 0</text>
+</svg>
