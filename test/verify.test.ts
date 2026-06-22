@@ -137,21 +137,31 @@ describe("attest → verify", () => {
     expect(decision.allowed).toBe(true);
   });
 
-  it("m3 allowlist: cold-start lets a known-good name pass without a signature", async () => {
+  it("m3 allowlist: cold-start lets a digest-pinned known-good name pass without a signature", async () => {
     // attest then strip the signature: an unsigned-but-named skill
     await attest(skillDir, { signingMode: "ed25519", keyDir });
     const bundlePath = path.join(skillDir, ".attestload", "attestation.json");
     const manifest = JSON.parse(await fs.readFile(bundlePath, "utf8"));
     const subjectName: string = manifest.subject.name;
+    const subjectDigest: string = manifest.subject.artifact_digest;
     delete manifest.signature;
     await fs.writeFile(bundlePath, JSON.stringify(manifest, null, 2));
 
     const result = await verify(skillDir);
     expect(result.ok).toBe(false);
 
+    // A cold-start entry must PIN the artifact_digest: trusting a name-only
+    // entry against an unsigned bundle would be an impersonation surface.
     const allowlist: Allowlist = {
       schema: "attestload-allowlist/v1",
-      entries: [{ name: subjectName, source_repo: "", added_at: new Date().toISOString() }],
+      entries: [
+        {
+          name: subjectName,
+          artifact_digest: subjectDigest,
+          source_repo: "",
+          added_at: new Date().toISOString(),
+        },
+      ],
     };
     const policy = PolicySchema.parse({ use_allowlist: true });
     const decision = evaluatePolicy(result, policy, allowlist);

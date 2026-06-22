@@ -30,10 +30,15 @@ const IGNORED_DIRS = new Set<string>([
 ]);
 
 /**
- * The attestation file itself must never be part of the manifest it describes,
- * otherwise the digest would depend on its own (not-yet-written) contents.
+ * Files that are never part of any manifest. Intentionally empty: the legacy
+ * `attestload.manifest.json` blanket-exclusion was a digest-coverage hole — it
+ * dropped any file with that basename at *any* depth, so an attacker could plant
+ * one anywhere and still verify clean. The real on-disk bundle
+ * (`.attestload/attestation.json`) is already excluded by the `.attestload`
+ * IGNORED_DIR plus the explicit `exclude` option callers pass, so nothing needs
+ * a basename-based blanket skip.
  */
-const IGNORED_FILES = new Set<string>(["attestload.manifest.json"]);
+const IGNORED_FILES = new Set<string>([]);
 
 /** Options controlling how a directory is walked into a file manifest. */
 export interface BuildManifestOptions {
@@ -50,24 +55,38 @@ export function sha256Hex(data: Buffer | string): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
+/** A raw filesystem entry collected during the walk, before hashing. */
+interface CollectedEntry {
+  readonly abs: string;
+  readonly kind: "file" | "symlink";
+}
+
 /**
- * Recursively collect every file under `root`, skipping ignored dirs/files.
- * Returns absolute paths; ordering is not guaranteed here (callers sort).
+ * Recursively collect every regular file and symlink under `root`, skipping
+ * ignored dirs/files. Returns absolute paths tagged with their kind; ordering is
+ * not guaranteed here (callers sort).
+ *
+ * Symlinks are recorded as their own leaf rather than followed: following them
+ * would either resolve outside the artifact (a `run.sh -> ../../evil` escape) or
+ * double-count their target, neither of which the attestation should hide. The
+ * link itself — path plus the digest of its unresolved target — is attested.
  */
-async function collectFiles(root: string, dir: string): Promise<string[]> {
-  const out: string[] = [];
+async function collectFiles(root: string, dir: string): Promise<CollectedEntry[]> {
+  const out: CollectedEntry[] = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     const abs = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
+    if (entry.isSymbolicLink()) {
+      out.push({ abs, kind: "symlink" });
+    } else if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name)) continue;
       out.push(...(await collectFiles(root, abs)));
     } else if (entry.isFile()) {
       if (IGNORED_FILES.has(entry.name)) continue;
-      out.push(abs);
+      out.push({ abs, kind: "file" });
     }
-    // symlinks / sockets / fifos are intentionally skipped: an attestation
-    // describes regular file content only.
+    // sockets / fifos are still skipped: an attestation describes regular file
+    // content and symlinks only.
   }
   return out;
 }
@@ -90,18 +109,40 @@ export async function buildFileManifest(
   options: BuildManifestOptions = {},
 ): Promise<FileEntry[]> {
   const exclude = new Set<string>(options.exclude ?? []);
-  const absFiles = await collectFiles(root, root);
+  const collected = await collectFiles(root, root);
 
   const entries: FileEntry[] = [];
-  for (const abs of absFiles) {
+  for (const { abs, kind } of collected) {
     const rel = toRelPosix(root, abs);
     if (exclude.has(rel)) continue;
-    const bytes = await fs.readFile(abs);
+
+    if (kind === "symlink") {
+      // Record the link itself: the digest is over the *unresolved* target
+      // string, so re-targeting a symlink (run.sh -> ../../evil) perturbs the
+      // leaf and the roll-up. We never read through the link.
+      const target = await fs.readlink(abs);
+      const lstat = await fs.lstat(abs);
+      entries.push(
+        FileEntrySchema.parse({
+          path: rel,
+          sha256: sha256Hex(target),
+          size: Buffer.byteLength(target),
+          mode: lstat.mode & 0o7777,
+          type: "symlink",
+          link_target: target,
+        }),
+      );
+      continue;
+    }
+
+    const [bytes, stat] = await Promise.all([fs.readFile(abs), fs.stat(abs)]);
     entries.push(
       FileEntrySchema.parse({
         path: rel,
         sha256: sha256Hex(bytes),
         size: bytes.byteLength,
+        mode: stat.mode & 0o7777,
+        type: "file",
       }),
     );
   }
@@ -114,24 +155,34 @@ export async function buildFileManifest(
  * Deterministic Merkle-style roll-up of a sorted file manifest into a single
  * directory digest.
  *
- * We hash a canonical line-oriented serialization (`<sha256>  <size>  <path>\n`
- * per entry, already path-sorted) rather than a binary Merkle tree: it is
- * simpler, equally tamper-evident for our purpose (any leaf change perturbs the
- * input), and trivially reproducible by a third party. The entries MUST already
- * be sorted (as {@link buildFileManifest} returns them); we sort defensively.
+ * The encoding hashes a *canonical JSON array* of the sorted leaves rather than
+ * a two-space-delimited line format. The old `<sha256>  <size>  <path>\n`
+ * serialization was ambiguous: a POSIX path may legally contain spaces and
+ * newlines, so a crafted name could move the field/record boundary and make two
+ * distinct file sets hash to the same byte stream (a forged collision). JSON
+ * string-escaping makes every field self-delimiting, and FileEntrySchema also
+ * now rejects control characters in `path`, so there is no in-band separator to
+ * smuggle. Each leaf contributes its digest, size, mode, type, link target, and
+ * path, so a re-targeted symlink or a post-sign `chmod +x` also changes the
+ * roll-up. Entries MUST already be path-sorted (as {@link buildFileManifest}
+ * returns them); we sort defensively.
  */
 export function rollupDigest(files: readonly FileEntry[]): string {
   const sorted = [...files].sort((a, b) =>
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
   );
-  const hash = createHash("sha256");
-  for (const f of sorted) {
-    const digest = f.sha256.startsWith("sha256:")
+  const leaves = sorted.map((f) => ({
+    path: f.path,
+    sha256: f.sha256.startsWith("sha256:")
       ? f.sha256.slice("sha256:".length)
-      : f.sha256;
-    hash.update(`${digest}  ${f.size}  ${f.path}\n`);
-  }
-  return hash.digest("hex");
+      : f.sha256,
+    size: f.size,
+    mode: f.mode ?? 0,
+    type: f.type ?? "file",
+    ...(f.link_target !== undefined ? { link_target: f.link_target } : {}),
+  }));
+  const canonical = JSON.stringify(leaves);
+  return createHash("sha256").update(canonical).digest("hex");
 }
 
 /** Serialize a file manifest to canonical, stable JSON (sorted by path). */

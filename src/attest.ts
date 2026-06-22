@@ -323,6 +323,15 @@ export async function attest(
     exclude: [`${ATTESTATION_DIR}/${ATTESTATION_FILE}`],
   });
 
+  // Refuse to attest a directory that covers zero files: an empty manifest
+  // rolls up to the fixed empty-string digest, so an "empty but signed" bundle
+  // would otherwise verify clean while attesting no content at all.
+  if (files.length === 0) {
+    throw new Error(
+      `refusing to attest ${root}: no files to attest (the directory is empty or every entry was ignored/excluded)`,
+    );
+  }
+
   // 2. directory roll-up digest
   const artifactDigest = rollupDigest(files);
 

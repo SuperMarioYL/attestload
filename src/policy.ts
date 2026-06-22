@@ -146,22 +146,36 @@ export function evaluatePolicy(
   }
 
   // ---- 2. allowlist cold-start path -------------------------------------
-  const unsignedButPresent =
-    result.blocked_reason === "no-signature" ||
-    result.blocked_reason === "no-manifest";
+  // Only an attestation that is *present and intact* but merely unsigned is
+  // eligible — i.e. `no-signature`. The old code also accepted `no-manifest`,
+  // but verify() returns `no-manifest` WITHOUT a parsed manifest, so that arm
+  // was dead (the `result.manifest` guard below could never be satisfied). Worse
+  // it advertised "you can cold-start with no attestation at all", which is
+  // exactly the impersonation surface we must close.
+  const unsignedButPresent = result.blocked_reason === "no-signature";
 
   if (policy.use_allowlist && allowlist && unsignedButPresent && result.manifest) {
     const subject = result.manifest.subject;
     const entry = allowlist.entries.find((e) => e.name === subject.name);
     if (entry) {
+      // A cold-start entry MUST pin a known-good artifact_digest. A name-only
+      // entry would trust whatever digest an UNSIGNED bundle self-declares, so
+      // an attacker could ship an unsigned attestation claiming name
+      // "github-mcp" and pass. Reject name-only entries outright.
+      if (!entry.artifact_digest) {
+        return {
+          allowed: false,
+          reason: `allowlist entry for "${subject.name}" is name-only (no pinned digest); cold-start requires a pinned artifact_digest`,
+          verify: result,
+        };
+      }
       const pinnedOk =
-        !entry.artifact_digest ||
         bareDigest(entry.artifact_digest) ===
-          bareDigest(subject.artifact_digest);
+        bareDigest(subject.artifact_digest);
       if (pinnedOk) {
         return {
           allowed: true,
-          reason: `allowlisted known-good skill "${subject.name}" (cold-start)`,
+          reason: `allowlisted known-good skill "${subject.name}" (cold-start, digest pinned)`,
           verify: result,
         };
       }

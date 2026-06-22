@@ -109,9 +109,17 @@ export function findEntry(
 
 /**
  * A small seed set of popular AI agent skills / MCP servers, so the index is
- * non-empty out of the box and the cold-start path is demonstrable. Digests are
- * intentionally absent (name-only trust) until the consumer pins one via
- * `index add <name> --digest <sha256>` or by attesting the dir themselves.
+ * non-empty out of the box and discoverable.
+ *
+ * These ship WITHOUT a pinned `artifact_digest`, and a name-only entry no longer
+ * satisfies the cold-start path: policy.ts refuses to honor an entry that does
+ * not pin a digest, because trusting a self-declared name in an UNSIGNED bundle
+ * is an impersonation surface (an attacker could ship an unsigned attestation
+ * claiming `github-mcp`). The seed is therefore a *catalog* of known projects;
+ * to actually gate-pass a dir cold, the consumer must pin its real digest via
+ * `index add <name> --digest <sha256>` (or attest the dir themselves). Each real
+ * repo's digest is left to the consumer to pin from a source they trust rather
+ * than baked in from an offline guess.
  */
 export const SEED_ALLOWLIST: readonly AddEntryInput[] = [
   { name: "everything-claude-code", source_repo: "github.com/affaan-m/everything-claude-code" },

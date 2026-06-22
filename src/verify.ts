@@ -73,6 +73,7 @@ export function verdictOf(result: VerifyResult): Verdict {
     case "rekor-not-found":
     case "identity-not-allowed":
     case "malformed-manifest":
+    case "empty-artifact":
       return "SIG_INVALID";
     default:
       return "SIG_INVALID";
@@ -214,6 +215,18 @@ export async function verify(dir: string): Promise<VerifyResult> {
     exclude: [`${ATTESTATION_DIR}/${ATTESTATION_FILE}`],
   });
   const recomputedDigest = rollupDigest(recomputedFiles);
+
+  // An attestation that covers zero files is meaningless: rollupDigest([])
+  // collapses to a fixed empty-string sha256, so an "empty but signed" payload
+  // (only a re-signed bundle plus ignored dirs) would otherwise pass. Treat an
+  // empty signed manifest OR an empty on-disk file set as a hard refusal.
+  if (manifest.files.length === 0 || recomputedFiles.length === 0) {
+    return blocked(
+      "empty-artifact",
+      "attestation covers zero files — refusing an empty (or emptied) artifact",
+      manifest,
+    );
+  }
 
   if (recomputedDigest !== bareDigest(manifest.subject.artifact_digest)) {
     return blocked(
