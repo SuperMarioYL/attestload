@@ -12,9 +12,9 @@
  *    rather than a failure.
  *
  *  - **MCP servers / lockfile-bearing dirs** additionally parse their declared
- *    dependencies from a lockfile (`package-lock.json`, `pnpm-lock.yaml`, or
- *    `requirements.txt`) so the SBOM names real upstream packages, not just the
- *    server's own files.
+ *    dependencies from a lockfile (`package-lock.json`, `pnpm-lock.yaml`,
+ *    `yarn.lock`, or `requirements.txt`) so the SBOM names real upstream
+ *    packages, not just the server's own files.
  *
  * Either way the output is the same SPDX-lite {@link Sbom} shape, so verify and
  * policy code never branch on artifact kind — only `sbom.source` records how it
@@ -43,6 +43,7 @@ import {
 const LOCKFILES = [
   "package-lock.json",
   "pnpm-lock.yaml",
+  "yarn.lock",
   "requirements.txt",
 ] as const;
 type LockfileName = (typeof LOCKFILES)[number];
@@ -156,6 +157,128 @@ function parsePnpmLock(raw: string): SbomPackage[] {
   return out;
 }
 
+/**
+ * Extract the package name from a yarn.lock descriptor like
+ * `"@babel/code-frame@^7.0.0"` or `lodash@^4.17.21`. The version range is
+ * everything after the LAST `@` that is not the leading scope `@`, so scoped
+ * names (`@scope/pkg`) survive intact.
+ */
+function yarnDescriptorName(descriptor: string): string {
+  let d = descriptor.trim().replace(/^"|"$/g, "");
+  // Berry descriptors can carry a protocol: `lodash@npm:^4.17.21` → drop `npm:`.
+  const scoped = d.startsWith("@");
+  const at = d.lastIndexOf("@");
+  if (at > (scoped ? 0 : -1)) {
+    d = d.slice(0, at);
+  }
+  return d;
+}
+
+/**
+ * Parse a `yarn.lock`. Handles BOTH formats under the same filename:
+ *  - **classic (Yarn v1)** — a custom block format: one or more comma-separated
+ *    quoted descriptors ending in `:`, followed by indented `version`,
+ *    `resolved`, `integrity` lines.
+ *  - **berry (Yarn v2+/v3/v4)** — valid YAML keyed by descriptor, each entry a
+ *    map with `version` + `resolution` + `checksum`.
+ *
+ * We try YAML first (berry) and fall back to the line parser (classic) when the
+ * content is the v1 block format (which is not valid YAML). One SBOM package per
+ * resolved name@version; the digest addresses the integrity/checksum string (or
+ * the name@version declaration when none is present), mirroring the other
+ * lockfile parsers.
+ */
+function parseYarnLock(raw: string): SbomPackage[] {
+  // --- berry (YAML) path -------------------------------------------------
+  // Berry locks start with a `__metadata:` block and are valid YAML. Classic
+  // v1 locks are NOT valid YAML (bare `key:` blocks with unquoted multi-key
+  // headers), so a successful parse into an object of entry-maps means berry.
+  if (/^__metadata:/m.test(raw)) {
+    try {
+      const doc = parseYaml(raw) as Record<
+        string,
+        { version?: string; resolution?: string; checksum?: string } | unknown
+      >;
+      const out: SbomPackage[] = [];
+      const seen = new Set<string>();
+      for (const [descriptor, metaRaw] of Object.entries(doc ?? {})) {
+        if (descriptor === "__metadata") continue;
+        const meta = metaRaw as { version?: string; resolution?: string; checksum?: string };
+        if (!meta || typeof meta !== "object") continue;
+        // A descriptor key may be a comma-joined list of ranges.
+        const first = descriptor.split(",")[0] ?? descriptor;
+        const name = yarnDescriptorName(first);
+        const version = meta.version ?? "";
+        const dedupeKey = `${name}@${version}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        out.push({
+          name,
+          version,
+          license: "",
+          digest: integrityToDigest(meta.checksum ?? meta.resolution ?? `${name}@${version}`),
+        });
+      }
+      if (out.length > 0) return out;
+      // fall through to classic if YAML produced nothing usable
+    } catch {
+      // not berry-YAML after all; fall through to the classic parser
+    }
+  }
+
+  // --- classic (Yarn v1) path -------------------------------------------
+  const out: SbomPackage[] = [];
+  const seen = new Set<string>();
+  const lines = raw.split(/\r?\n/);
+  let pendingNames: string[] = [];
+  let version = "";
+  let integrity = "";
+
+  const flush = () => {
+    if (pendingNames.length > 0 && version) {
+      const name = pendingNames[0];
+      if (name) {
+        const dedupeKey = `${name}@${version}`;
+        if (!seen.has(dedupeKey)) {
+          seen.add(dedupeKey);
+          out.push({
+            name,
+            version,
+            license: "",
+            digest: integrityToDigest(integrity || `${name}@${version}`),
+          });
+        }
+      }
+    }
+    pendingNames = [];
+    version = "";
+    integrity = "";
+  };
+
+  for (const line of lines) {
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    // A header line is unindented and ends with ":".
+    if (!/^\s/.test(line) && line.trimEnd().endsWith(":")) {
+      flush();
+      const header = line.trimEnd().replace(/:$/, "");
+      pendingNames = header.split(",").map((d) => yarnDescriptorName(d));
+      continue;
+    }
+    const vMatch = /^\s+version:?\s+"?([^"\s]+)"?/.exec(line);
+    if (vMatch && vMatch[1]) {
+      version = vMatch[1];
+      continue;
+    }
+    const iMatch = /^\s+integrity\s+"?([^"\s]+)"?/.exec(line);
+    if (iMatch && iMatch[1]) {
+      integrity = iMatch[1];
+      continue;
+    }
+  }
+  flush();
+  return out;
+}
+
 /** Parse a pip `requirements.txt` (best-effort: `name==version` lines). */
 function parseRequirements(raw: string): SbomPackage[] {
   const out: SbomPackage[] = [];
@@ -203,6 +326,9 @@ export async function sbomFromLockfile(
       break;
     case "pnpm-lock.yaml":
       packages = parsePnpmLock(raw);
+      break;
+    case "yarn.lock":
+      packages = parseYarnLock(raw);
       break;
     case "requirements.txt":
       packages = parseRequirements(raw);

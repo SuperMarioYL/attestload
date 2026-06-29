@@ -13,8 +13,9 @@
  * load-bearing: `verify` exits non-zero on refusal so it can gate CI / hooks.
  */
 
-import { promises as fs } from "node:fs";
+import { promises as fs, readFileSync } from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Command } from "commander";
 
@@ -29,6 +30,31 @@ import {
   seedAllowlist,
 } from "./index-allowlist.js";
 import { DEFAULT_POLICY, type ArtifactKind } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Package version (read at startup from package.json — never hardcoded).
+// ---------------------------------------------------------------------------
+/**
+ * Resolve the real package version from `package.json` so `attestload --version`
+ * always matches the shipped release. The literal that used to live in
+ * `.version("0.1.0")` drifted (the package shipped 0.2.0+ while the CLI still
+ * reported 0.1.0), which is a correctness defect for a provenance tool whose
+ * value is truthful reporting. We read it relative to this module's URL so it
+ * works both from `dist/cli.js` (→ ../package.json) and from `tsx src/cli.ts`
+ * (→ ../package.json). Any read/parse failure degrades to "0.0.0" rather than
+ * crashing the CLI.
+ */
+export function packageVersion(): string {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    // dist/cli.js and src/cli.ts both sit one level under the package root.
+    const pkgPath = path.join(here, "..", "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string };
+    return typeof pkg.version === "string" && pkg.version ? pkg.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tiny ANSI helpers (no dep). Disabled when not a TTY or NO_COLOR is set.
@@ -271,7 +297,7 @@ export function buildProgram(): Command {
     .description(
       "Attest-before-load gate for coding agents: sign Skills / MCP servers into verifiable SBOM + provenance, and refuse to load unattested code.",
     )
-    .version("0.1.0");
+    .version(packageVersion());
 
   program
     .command("attest")

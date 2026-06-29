@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-30
+
+A correctness-and-coverage release. One fix makes the CLI report its real version,
+and one feature completes lockfile-class SBOM coverage with `yarn.lock`. No trust-model
+surface changes — existing attestations remain valid.
+
+### Fixed
+
+- **`attestload --version` now reports the real package version.** The CLI hardcoded
+  `0.1.0` in `cli.ts`, so `--version` kept printing `0.1.0` even after the package
+  shipped `0.2.0`. For a provenance tool whose value is truthful reporting, the bin
+  must not lie about its own version. The version is now read from `package.json` at
+  startup, and `test/cli.test.ts` asserts the CLI-reported version equals the package
+  version so the two can never silently drift again.
+
+### Added
+
+- **`yarn.lock` SBOM derivation.** SBOM lockfile coverage previously handled
+  `package-lock.json`, `pnpm-lock.yaml`, and `requirements.txt` but not `yarn.lock`,
+  so a yarn-based MCP server silently fell back to a file-manifest SBOM and never named
+  its upstream dependencies. `attestload attest` now parses `yarn.lock` — both the
+  classic (Yarn v1) block format and the berry (Yarn v2+) YAML format — into a
+  `source: "lockfile"` SBOM that names the declared packages. This stays inside the
+  already-supported lockfile class: it is a single declared-lockfile parser, not a
+  transitive build-graph resolver. Covered by `test/sbom.test.ts`.
+
 ## [0.2.0] - 2026-06-23
 
 A security-hardening release. No new feature surface — five load-bearing holes in
@@ -84,6 +110,7 @@ unsigned or tampered.
 - Programmatic API (`import { verify, attest, guardLoad } from "attestload"`) for
   embedding the gate in a coding agent's skill-loading path.
 
-[Unreleased]: https://github.com/SuperMarioYL/attestload/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/SuperMarioYL/attestload/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/SuperMarioYL/attestload/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SuperMarioYL/attestload/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SuperMarioYL/attestload/releases/tag/v0.1.0
