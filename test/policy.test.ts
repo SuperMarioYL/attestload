@@ -127,3 +127,56 @@ describe("fix 4: name-only allowlist entry cannot pass an unsigned self-claimed 
     expect(decision.allowed).toBe(false);
   });
 });
+
+/**
+ * Regression tests for the v0.4.0 relaxed-path provenance fix.
+ *
+ * The signature-optional relaxed branch (require_signature=false + a no-signature
+ * verdict) used to allow an unsigned-but-digest-verified artifact WITHOUT applying
+ * require_provenance — asymmetric with the cryptographically-verified path, which
+ * always enforces it. A coherent {require_signature:false, require_provenance:true}
+ * posture ("accept digest-pinned unsigned code but still demand a builder identity")
+ * must refuse a builder-less artifact on BOTH paths.
+ */
+describe("v0.4.0 fix: relaxed path enforces require_provenance symmetrically", () => {
+  /** An unsigned-but-present result whose manifest has an EMPTY builder_id. */
+  function unsignedResultNoBuilder(): VerifyResult {
+    const manifest = fakeManifest("some-skill", DIGEST_A);
+    return {
+      ok: false,
+      blocked_reason: "no-signature",
+      message: "attestation carries no signature — unsigned code refused to load",
+      manifest: { ...manifest, provenance: { ...manifest.provenance, builder_id: "" } },
+    };
+  }
+
+  const RELAXED_PROV_REQUIRED = PolicySchema.parse({
+    require_signature: false,
+    require_provenance: true,
+  });
+
+  it("refuses an unsigned, builder-less artifact when provenance is required", () => {
+    const decision = evaluatePolicy(unsignedResultNoBuilder(), RELAXED_PROV_REQUIRED);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/provenance|builder_id/i);
+  });
+
+  it("still allows an unsigned artifact that DOES carry a builder_id", () => {
+    // fakeManifest sets builder_id "local:tester", so provenance is satisfied.
+    const decision = evaluatePolicy(
+      unsignedResult("some-skill", DIGEST_A),
+      RELAXED_PROV_REQUIRED,
+    );
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).toMatch(/signature not required/i);
+  });
+
+  it("allows a builder-less unsigned artifact when provenance is NOT required", () => {
+    const relaxedNoProv = PolicySchema.parse({
+      require_signature: false,
+      require_provenance: false,
+    });
+    const decision = evaluatePolicy(unsignedResultNoBuilder(), relaxedNoProv);
+    expect(decision.allowed).toBe(true);
+  });
+});

@@ -137,6 +137,29 @@ describe("attest → verify", () => {
     expect(decision.allowed).toBe(true);
   });
 
+  it("v0.4.0: a file-manifest SBOM missing a package for an attested file is BLOCKED (sbom-mismatch)", async () => {
+    // A file-manifest SBOM is defined as one package PER file — a total map of
+    // the artifact. Drop one package from sbom.packages while leaving files[] and
+    // the on-disk files intact: the roll-up digest still matches (so we get PAST
+    // the digest-mismatch check), but the bill-of-materials no longer covers every
+    // attested file, so verify() must refuse with sbom-mismatch.
+    await attest(skillDir, { signingMode: "ed25519", keyDir });
+    const bundlePath = path.join(skillDir, ".attestload", "attestation.json");
+    const manifest = JSON.parse(await fs.readFile(bundlePath, "utf8"));
+
+    expect(manifest.subject.sbom_source).toBe("file-manifest");
+    expect(manifest.sbom.packages.length).toBeGreaterThanOrEqual(2);
+    // remove exactly one package (leave files[] and the digest untouched)
+    const droppedName: string = manifest.sbom.packages[0].name;
+    manifest.sbom.packages = manifest.sbom.packages.slice(1);
+    await fs.writeFile(bundlePath, JSON.stringify(manifest, null, 2));
+
+    const result = await verify(skillDir);
+    expect(result.ok).toBe(false);
+    expect(result.blocked_reason).toBe("sbom-mismatch");
+    expect(result.message).toContain(droppedName);
+  });
+
   it("m3 allowlist: cold-start lets a digest-pinned known-good name pass without a signature", async () => {
     // attest then strip the signature: an unsigned-but-named skill
     await attest(skillDir, { signingMode: "ed25519", keyDir });

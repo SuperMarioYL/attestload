@@ -243,12 +243,29 @@ export async function verify(dir: string): Promise<VerifyResult> {
     const leafByPath = new Map(
       recomputedFiles.map((f) => [f.path, bareDigest(f.sha256)]),
     );
+    // Forward direction: every CLAIMED package must still match a recomputed leaf.
     for (const pkg of manifest.sbom.packages) {
       const leaf = leafByPath.get(pkg.name);
       if (leaf === undefined || leaf !== bareDigest(pkg.digest)) {
         return blocked(
           "sbom-mismatch",
           `SBOM entry for "${pkg.name}" does not match the directory contents`,
+          manifest,
+        );
+      }
+    }
+    // Reverse direction: a file-manifest SBOM is defined as one package PER file —
+    // a TOTAL map of the artifact (see sbom.ts sbomFromFileManifest). If any
+    // attested leaf is NOT named by a package, the bill-of-materials is
+    // incomplete, so refuse. The roll-up digest above already pins the file set,
+    // but this restores the file-manifest SBOM's own completeness invariant
+    // rather than leaving it implicit.
+    const namedPackages = new Set(manifest.sbom.packages.map((p) => p.name));
+    for (const f of recomputedFiles) {
+      if (!namedPackages.has(f.path)) {
+        return blocked(
+          "sbom-mismatch",
+          `file "${f.path}" is attested but not named by any SBOM package — the bill-of-materials is incomplete`,
           manifest,
         );
       }

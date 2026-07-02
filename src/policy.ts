@@ -189,8 +189,24 @@ export function evaluatePolicy(
 
   // ---- 3. refuse --------------------------------------------------------
   // Honor a relaxed policy: if signature is not required and the only failure
-  // is a missing signature, allow (provenance/digest still enforced above).
+  // is a missing signature, allow — but keep provenance enforcement SYMMETRIC
+  // with the cryptographically-verified path (step 1). A no-signature verdict
+  // still carries the parsed manifest (verify() attaches it before the signature
+  // check), so `require_provenance` must be applied here too; otherwise a policy
+  // of {require_signature: false, require_provenance: true} would load an
+  // unsigned, builder-less artifact — the weaker path silently skipping the very
+  // check the policy asked for.
   if (!policy.require_signature && result.blocked_reason === "no-signature") {
+    if (
+      policy.require_provenance &&
+      !result.manifest?.provenance.builder_id
+    ) {
+      return {
+        allowed: false,
+        reason: "policy requires provenance but the attestation has no builder_id",
+        verify: result,
+      };
+    }
     return {
       allowed: true,
       reason: "signature not required by policy; manifest digest verified",

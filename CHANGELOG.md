@@ -6,6 +6,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-02
+
+A trust-model correctness release. Two fixes close asymmetric-enforcement gaps in the
+load-decision path; both are in the same family as the 0.2.0 five-hole hardening. No
+attestation format change — existing attestations remain valid.
+
+### Fixed
+
+- **The signature-optional policy path now enforces `require_provenance` symmetrically.**
+  `evaluatePolicy`'s relaxed branch — reached when `require_signature: false` and the
+  bundle is unsigned-but-digest-verified — returned `allowed` without applying the
+  `require_provenance` / `builder_id` guard that the cryptographically-verified path
+  always enforces. So a coherent `{require_signature: false, require_provenance: true}`
+  policy ("accept digest-pinned unsigned code but still demand a builder identity")
+  would load an unsigned, builder-less artifact — the weaker path silently skipping the
+  very check the policy asked for. Provenance is now enforced identically on both paths.
+  Pinned by new cases in `test/policy.test.ts`.
+
+- **`verify` now enforces file-manifest SBOM completeness in both directions.** For a
+  `file-manifest`-source SBOM (defined as one package per file — a total map of the
+  artifact), `verify` checked that every *claimed* package matched a recomputed leaf but
+  not the reverse: that every attested file is *named by* a package. A manifest whose
+  `sbom.packages` covered only a subset of its `files[]` passed the SBOM stage. `verify`
+  now also refuses (`sbom-mismatch`) when any attested file is not named by an SBOM
+  package, restoring the file-manifest SBOM's completeness invariant. (The roll-up digest
+  already pinned the file set, so this closes a correctness gap rather than a live
+  tamper bypass.) Pinned by a new case in `test/verify.test.ts`.
+
 ## [0.3.0] - 2026-06-30
 
 A correctness-and-coverage release. One fix makes the CLI report its real version,
