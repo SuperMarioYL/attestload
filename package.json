@@ -1,6 +1,6 @@
 {
   "name": "attestload",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Attest-before-load gate for coding agents: sign AI agent Skills and MCP servers into verifiable SBOM + provenance attestations, and refuse to load unattested code.",
   "type": "module",
   "license": "MIT",

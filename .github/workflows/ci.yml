@@ -22,3 +22,11 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+      - name: README release-badge drift guard
+        run: |
+          if grep -nE 'img\.shields\.io/badge/release-v[0-9]' README.md README.en.md; then
+            echo "ERROR: a hardcoded static release-vX.Y.Z badge was found in a README."
+            echo "Use the dynamic github/v/release badge instead so the version tracks the real release tag."
+            exit 1
+          fi
+          echo "OK: no hardcoded static release badge in READMEs."

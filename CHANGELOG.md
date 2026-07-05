@@ -6,6 +6,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-05
+
+A trust-boundary correctness release. The headline fix closes a
+self-authorization hole in the policy-discovery path; two further fixes make a
+malformed policy file fail loudly instead of silently degrading, and stop the
+README release badge from drifting. No attestation format change — existing
+attestations remain valid.
+
+### Fixed
+
+- **Policy files are no longer discovered inside the verified artifact directory.**
+  `verify` and `guardLoad` used to probe the *verified* dir for
+  `attestload.policy.{json,yaml,yml}`, so a downloaded skill could ship its own
+  relaxed policy (`{require_signature: false, require_provenance: false}`) and
+  self-authorize: its unsigned manifest made `verify()` return `no-signature`,
+  and `evaluatePolicy`'s relaxed branch returned `allowed: true` — exit 0, PASS.
+  The artifact defined its own admission rules, inverting the trust boundary the
+  whole product is built on. The policy search now defaults to the consumer's
+  cwd and NEVER probes the artifact dir; an explicit `--policy <file outside the
+  artifact>` still applies. Pinned by new cases in `test/policy.test.ts`.
+
+- **A malformed policy file now fails loudly instead of silently degrading to the
+  strict default.** `loadPolicy`'s search loop caught every error from
+  `fs.readFile` + `parsePolicy` — not just `ENOENT` — so a typo'd
+  `attestload.policy.json` was treated as "not present", and both call sites
+  blanket-caught the whole `loadPolicy` call down to `DEFAULT_POLICY`. That
+  meant an explicit `--policy ./my-policy.json` with a single syntax typo
+  silently refused everything, with no signal that the policy file was the
+  cause. The search loop now catches ONLY `ENOENT` (try the next candidate) and
+  re-throws parse/schema errors with the offending filename; the call sites no
+  longer blanket-catch an explicit `--policy` load, so a malformed or missing
+  explicit policy fails the command with a non-zero exit and a message naming
+  the file. A malformed default policy in cwd surfaces the same way. Pinned by
+  new cases in `test/policy.test.ts`.
+
+- **The README release badge now tracks the real GitHub release tag.** Both
+  `README.md` and `README.en.md` carried a hardcoded `release-v0.1.0` shields.io
+  static literal, which had drifted across four version bumps while
+  `package.json` shipped 0.2.0–0.5.0 — the same truthful-reporting defect the
+  0.3.0 CLI version fix addressed. Replaced with a dynamic `github/v/release`
+  badge (brand color preserved), and a CI drift guard now fails the build if
+  either README regresses to a static `release-vX.Y.Z` badge.
+
 ## [0.4.0] - 2026-07-02
 
 A trust-model correctness release. Two fixes close asymmetric-enforcement gaps in the
@@ -138,7 +181,9 @@ unsigned or tampered.
 - Programmatic API (`import { verify, attest, guardLoad } from "attestload"`) for
   embedding the gate in a coding agent's skill-loading path.
 
-[Unreleased]: https://github.com/SuperMarioYL/attestload/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/SuperMarioYL/attestload/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/SuperMarioYL/attestload/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/SuperMarioYL/attestload/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/SuperMarioYL/attestload/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/SuperMarioYL/attestload/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/SuperMarioYL/attestload/releases/tag/v0.1.0

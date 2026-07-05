@@ -29,7 +29,7 @@ import {
   removeEntry,
   seedAllowlist,
 } from "./index-allowlist.js";
-import { DEFAULT_POLICY, type ArtifactKind } from "./types.js";
+import { type ArtifactKind, type Policy } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Package version (read at startup from package.json — never hardcoded).
@@ -135,11 +135,32 @@ async function runVerify(
 
   const result = await verify(dir);
 
-  // layer policy on top of the raw cryptographic verdict
-  const policy = await loadPolicy({
-    ...(opts.policy ? { file: opts.policy } : {}),
-    searchDir: dir,
-  }).catch(() => DEFAULT_POLICY);
+  // Layer policy on top of the raw cryptographic verdict. The policy file is
+  // NEVER discovered inside the verified artifact dir (`dir`): that would let a
+  // downloaded skill ship its own relaxed `attestload.policy.json` and
+  // self-authorize (unsigned manifest → no-signature → relaxed policy →
+  // allowed:true → exit 0, PASS), inverting the trust boundary the whole
+  // product is built on. Default search is the consumer's cwd; an explicit
+  // `--policy <file outside the artifact>` still applies. A malformed or
+  // missing explicit policy — or a malformed default policy in cwd — fails
+  // loudly with a non-zero exit and a message naming the file, rather than
+  // silently degrading to the strict default (which would refuse everything
+  // with no signal that the policy file is the cause).
+  let policy: Policy;
+  try {
+    policy = await loadPolicy(opts.policy ? { file: opts.policy } : {});
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const where = opts.policy ? "explicit --policy" : "default policy search in cwd";
+    out(
+      json,
+      { allowed: false, message: `policy load failed (${where}): ${msg}` },
+      () => {
+        console.error(red(`BLOCKED: failed to load policy (${where}): ${msg}`));
+      },
+    );
+    return 1;
+  }
   const effectivePolicy = opts.allowlist
     ? { ...policy, use_allowlist: true }
     : policy;

@@ -57,9 +57,33 @@ export function parsePolicy(raw: string, filename = ""): Policy {
 }
 
 /**
+ * Parse + validate raw policy text and attach the offending filename to any
+ * failure. A bare {@link parsePolicy} error (a JSON `SyntaxError`, a Zod schema
+ * violation) does not name the file it came from, so a typo'd policy file would
+ * surface as an opaque parse message with no indication of which file caused
+ * it. Wrapping the throw here keeps the filename in the message so the CLI / a
+ * caller's loud-fail path can point at the right file.
+ */
+function parsePolicyFile(raw: string, filename: string): Policy {
+  try {
+    return parsePolicy(raw, filename);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`failed to load policy file "${filename}": ${msg}`);
+  }
+}
+
+/**
  * Load a policy. If `file` is given it must exist and parse; otherwise the cwd
  * (or `searchDir`) is probed for a default policy file. When nothing is found,
  * {@link DEFAULT_POLICY} is returned (strict).
+ *
+ * Error handling is deliberate: the default-search loop catches ONLY `ENOENT`
+ * (a candidate filename simply not present → try the next one). Any other
+ * failure — a present-but-malformed file (JSON/YAML syntax error, Zod schema
+ * violation) or a non-ENOENT I/O error — propagates with the offending
+ * filename, so a typo'd policy file fails loudly instead of being silently
+ * treated as "absent" and degrading to the strict default.
  */
 export async function loadPolicy(options: {
   readonly file?: string;
@@ -67,17 +91,26 @@ export async function loadPolicy(options: {
 } = {}): Promise<Policy> {
   if (options.file) {
     const raw = await fs.readFile(options.file, "utf8");
-    return parsePolicy(raw, options.file);
+    return parsePolicyFile(raw, options.file);
   }
   const dir = options.searchDir ?? process.cwd();
   for (const name of POLICY_FILENAMES) {
     const candidate = path.join(dir, name);
+    let raw: string;
     try {
-      const raw = await fs.readFile(candidate, "utf8");
-      return parsePolicy(raw, candidate);
-    } catch {
-      // not present; try next
+      raw = await fs.readFile(candidate, "utf8");
+    } catch (err) {
+      // File not present → try the next candidate. Anything else (EACCES, a
+      // malformed file body, ...) propagates with the path already named.
+      if (
+        err instanceof Error &&
+        (err as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        continue;
+      }
+      throw err;
     }
+    return parsePolicyFile(raw, candidate);
   }
   return DEFAULT_POLICY;
 }

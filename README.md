@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-1D1D1F"></a>
-  <a href="https://github.com/SuperMarioYL/attestload/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.0-E0541B"></a>
+  <a href="https://github.com/SuperMarioYL/attestload/releases"><img alt="Release" src="https://img.shields.io/github/v/release/SuperMarioYL/attestload?color=E0541B"></a>
   <a href="https://github.com/SuperMarioYL/attestload/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/SuperMarioYL/attestload/ci.yml?branch=main&label=ci"></a>
   <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white">
   <img alt="MCP-ready" src="https://img.shields.io/badge/MCP-ready-C81E1E">

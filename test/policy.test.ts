@@ -12,10 +12,16 @@
  * no signing/network is involved.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { promises as fs } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
-import { evaluatePolicy } from "../src/policy.js";
+import { attest } from "../src/attest.js";
+import { checkLoad } from "../src/loader-guard.js";
+import { evaluatePolicy, loadPolicy } from "../src/policy.js";
 import {
+  DEFAULT_POLICY,
   PolicySchema,
   type Allowlist,
   type AttestationManifest,
@@ -178,5 +184,123 @@ describe("v0.4.0 fix: relaxed path enforces require_provenance symmetrically", (
     });
     const decision = evaluatePolicy(unsignedResultNoBuilder(), relaxedNoProv);
     expect(decision.allowed).toBe(true);
+  });
+});
+
+/**
+ * Regression tests for the v0.5.0 policy-discovery fixes.
+ *
+ * fix 1 — a policy file planted INSIDE the verified artifact dir is no longer
+ * honored (a downloaded skill can no longer self-authorize with its own relaxed
+ * policy), but an explicit --policy file OUTSIDE the artifact still applies.
+ *
+ * fix 2 — a malformed or missing explicit --policy file fails loudly (throws,
+ * naming the file) instead of silently degrading to DEFAULT_POLICY; a missing
+ * default policy still cleanly falls back to DEFAULT_POLICY, while a malformed
+ * default policy in the search dir surfaces rather than being swallowed.
+ */
+describe("v0.5.0 fix 2: malformed/missing explicit policy fails loudly; missing default falls back", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "attestload-policy-fix2-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it("a malformed explicit --policy file (invalid JSON) throws and names the file", async () => {
+    const file = path.join(tmp, "bad.json");
+    await fs.writeFile(file, "{ not valid json");
+    await expect(loadPolicy({ file })).rejects.toThrow(/bad\.json/);
+  });
+
+  it("a schema-violating explicit --policy file throws and names the file", async () => {
+    const file = path.join(tmp, "bad-schema.json");
+    // require_signature must be a boolean; a string violates the policy schema.
+    await fs.writeFile(file, JSON.stringify({ require_signature: "no" }));
+    await expect(loadPolicy({ file })).rejects.toThrow(/bad-schema\.json/);
+  });
+
+  it("a missing explicit --policy file throws (ENOENT surfaces, not swallowed)", async () => {
+    const file = path.join(tmp, "nope.json");
+    await expect(loadPolicy({ file })).rejects.toThrow(/nope\.json/);
+  });
+
+  it("a missing default policy in the search dir falls back to DEFAULT_POLICY", async () => {
+    // Empty tmp dir holds no attestload.policy.* → strict default.
+    const policy = await loadPolicy({ searchDir: tmp });
+    expect(policy).toEqual(DEFAULT_POLICY);
+  });
+
+  it("a malformed default policy in the search dir throws (not swallowed as absent)", async () => {
+    const file = path.join(tmp, "attestload.policy.json");
+    await fs.writeFile(file, "{ broken");
+    await expect(loadPolicy({ searchDir: tmp })).rejects.toThrow(
+      /attestload\.policy\.json/,
+    );
+  });
+});
+
+describe("v0.5.0 fix 1: a policy file inside the verified artifact dir is NOT honored", () => {
+  let workspace: string;
+  let skillDir: string;
+  let keyDir: string;
+
+  beforeEach(async () => {
+    workspace = await fs.mkdtemp(path.join(os.tmpdir(), "attestload-policy-fix1-"));
+    skillDir = path.join(workspace, "skill");
+    keyDir = path.join(workspace, "keys");
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, "SKILL.md"),
+      "---\nname: fixture-skill\nversion: 1.0.0\n---\n# Fixture\nhello.\n",
+    );
+    // A self-authorizing policy planted INSIDE the artifact dir. Under the old
+    // trust-boundary bug this was discovered and used to bless the unsigned
+    // manifest below; it must now be ignored.
+    await fs.writeFile(
+      path.join(skillDir, "attestload.policy.json"),
+      JSON.stringify({ require_signature: false, require_provenance: false }),
+    );
+    // Attest WITH the policy file present so the file manifest's digest covers
+    // it (adding it later would shift the digest → digest-mismatch, not the
+    // no-signature scenario this fix targets).
+    await attest(skillDir, { signingMode: "ed25519", keyDir });
+    // Strip the signature → an unsigned-but-present, digest-valid manifest.
+    // verify() now returns `no-signature` with the parsed manifest attached.
+    const attestationPath = path.join(skillDir, ".attestload", "attestation.json");
+    const manifest = JSON.parse(
+      await fs.readFile(attestationPath, "utf8"),
+    ) as { signature?: unknown } & Record<string, unknown>;
+    delete manifest.signature;
+    await fs.writeFile(
+      attestationPath,
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+  });
+
+  afterEach(async () => {
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
+  it("the in-dir relaxed policy does not self-authorize an unsigned skill (BLOCKED)", async () => {
+    const decision = await checkLoad(skillDir);
+    expect(decision.allowed).toBe(false);
+    // Pin the scenario: blocked for being UNSIGNED (the in-dir relaxed policy
+    // was ignored and the strict default applied), not for a tamper.
+    expect(decision.verify.blocked_reason).toBe("no-signature");
+  });
+
+  it("an explicit --policy file OUTSIDE the artifact still applies (relaxed → PASS)", async () => {
+    const outside = path.join(workspace, "consumer.policy.json");
+    await fs.writeFile(
+      outside,
+      JSON.stringify({ require_signature: false, require_provenance: false }),
+    );
+    const decision = await checkLoad(skillDir, { policyFile: outside });
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).toMatch(/signature not required/i);
   });
 });

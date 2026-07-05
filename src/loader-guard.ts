@@ -45,7 +45,7 @@
 import { verify } from "./verify.js";
 import { evaluatePolicy, loadPolicy, type PolicyDecision } from "./policy.js";
 import { loadAllowlist } from "./index-allowlist.js";
-import { DEFAULT_POLICY, type Allowlist, type Policy } from "./types.js";
+import { type Allowlist, type Policy } from "./types.js";
 
 /** Thrown by {@link guardLoad} when an artifact is refused. */
 export class LoadRefused extends Error {
@@ -76,15 +76,19 @@ export interface GuardOptions {
 
 /** Resolve the effective policy + allowlist from options. */
 async function resolveContext(
-  dir: string,
   options: GuardOptions,
 ): Promise<{ policy: Policy; allowlist: Allowlist | undefined }> {
+  // The policy file is NEVER discovered inside the verified artifact dir: a
+  // downloaded skill must not ship its own relaxed `attestload.policy.json` and
+  // self-authorize (unsigned manifest → relaxed policy → allowed), inverting
+  // the trust boundary. Default search is the consumer's cwd; an explicit
+  // `policyFile` outside the artifact still applies. A malformed or missing
+  // explicit policy — or a malformed default policy in cwd — propagates as an
+  // error rather than silently degrading to the strict default (which would
+  // refuse everything with no signal that the policy file is the cause).
   const policy =
     options.policy ??
-    (await loadPolicy({
-      ...(options.policyFile ? { file: options.policyFile } : {}),
-      searchDir: dir,
-    }).catch(() => DEFAULT_POLICY));
+    (await loadPolicy(options.policyFile ? { file: options.policyFile } : {}));
 
   let allowlist: Allowlist | undefined = options.allowlist;
   if (!allowlist && policy.use_allowlist) {
@@ -102,7 +106,7 @@ export async function checkLoad(
   options: GuardOptions = {},
 ): Promise<PolicyDecision> {
   const result = await verify(dir);
-  const { policy, allowlist } = await resolveContext(dir, options);
+  const { policy, allowlist } = await resolveContext(options);
   return evaluatePolicy(result, policy, allowlist);
 }
 
