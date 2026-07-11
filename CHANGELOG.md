@@ -4,7 +4,33 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-07-11
+
+A trust-boundary correctness release closing an identity-allowlist bypass. No
+attestation format change.
+
+### Fixed
+- **`allowed_identities` can no longer be bypassed via the self-declared
+  `cert_identity` on ed25519 attestations.** The ed25519 detached signature
+  verifies against a public key *embedded in the bundle*, while `cert_identity`
+  sits in the (unsigned) signature block — so any holder of any ed25519 key could
+  sign an artifact with their own key and set `cert_identity` to a value listed in
+  a consumer's `allowed_identities` to impersonate a trusted signer and pass the
+  gate. `evaluatePolicy` now matches `allowed_identities` against the
+  cryptographically **bound** signer identity — for ed25519 the verified key's
+  SPKI-DER sha256 fingerprint, `ed25519:<hex>` — rather than the self-declared
+  string. An unparseable key yields no identity, so the check fails closed.
+  (Sigstore identities remain matched on `cert_identity`, which the bundle
+  verification cryptographically gates against the OIDC certificate.)
+
+  **Breaking (security hardening, fails closed):** an ed25519 `allowed_identities`
+  entry that listed a human `cert_identity` string (e.g. `local:*`) no longer
+  matches; pin the key fingerprint instead. When such a config now refuses, the
+  block message names the bound identity to pin (`signing identity "ed25519:<hex>"
+  is not in allowed_identities`). No artifact that should be refused becomes
+  allowed — a previously-allowed (impersonable) config now refuses until it is
+  re-pinned. `allowed_identities` is empty by default, so consumers that do not
+  enforce an identity allowlist are unaffected.
 
 ## [0.5.0] - 2026-07-05
 

@@ -20,6 +20,7 @@
  */
 
 import { promises as fs } from "node:fs";
+import { createHash, createPublicKey } from "node:crypto";
 import * as path from "node:path";
 
 import { parse as parseYaml } from "yaml";
@@ -27,6 +28,7 @@ import { parse as parseYaml } from "yaml";
 import {
   DEFAULT_POLICY,
   PolicySchema,
+  type AttestationManifest,
   type Allowlist,
   type Policy,
   type VerifyResult,
@@ -115,6 +117,49 @@ export async function loadPolicy(options: {
   return DEFAULT_POLICY;
 }
 
+/**
+ * The cryptographically-BOUND signer identity that `allowed_identities` is
+ * matched against.
+ *
+ * For ed25519 the detached signature verifies against a public key EMBEDDED in
+ * the bundle, and `cert_identity` sits in the UNSIGNED signature block — so an
+ * attacker holding any ed25519 key could sign an artifact with their own key and
+ * set `cert_identity` to an allowed value to impersonate a trusted signer and
+ * pass `allowed_identities`. The only value bound to the verified key is the key
+ * itself, so the identity is its SPKI-DER sha256 fingerprint (`ed25519:<hex>`),
+ * which an org pins in `allowed_identities`. An unparseable key yields `""` so
+ * the allowlist check fails CLOSED. (This is a breaking hardening: an ed25519
+ * `allowed_identities` config that listed a human `cert_identity` string must be
+ * migrated to the key fingerprint; a previously-allowed artifact now refuses
+ * rather than being impersonable.)
+ *
+ * For sigstore the identity comes from the OIDC-issued certificate that the
+ * bundle verification (verify.ts) cryptographically gates, so the manifest's
+ * `cert_identity` is used as-is.
+ */
+function boundSignerIdentity(m: AttestationManifest): string {
+  const bundle = m.signature?.bundle as
+    | { signing_mode?: string; public_key_pem?: string }
+    | undefined;
+  if (
+    bundle &&
+    typeof bundle === "object" &&
+    bundle.signing_mode === "ed25519" &&
+    typeof bundle.public_key_pem === "string"
+  ) {
+    try {
+      const der = createPublicKey(bundle.public_key_pem).export({
+        type: "spki",
+        format: "der",
+      });
+      return "ed25519:" + createHash("sha256").update(der).digest("hex");
+    } catch {
+      return "";
+    }
+  }
+  return m.signature?.cert_identity ?? "";
+}
+
 /** Match an identity against a pattern supporting a trailing/embedded `*`. */
 function identityMatches(pattern: string, identity: string): boolean {
   if (pattern === identity) return true;
@@ -156,7 +201,10 @@ export function evaluatePolicy(
     }
 
     if (policy.allowed_identities.length > 0) {
-      const identity = m.signature?.cert_identity ?? "";
+      // Match against the cryptographically-bound signer identity (the verified
+      // key fingerprint for ed25519), NOT the self-declared cert_identity, which
+      // an attacker's own key could set to impersonate an allowed signer.
+      const identity = boundSignerIdentity(m);
       const ok = policy.allowed_identities.some((p) =>
         identityMatches(p, identity),
       );

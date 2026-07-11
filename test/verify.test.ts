@@ -16,6 +16,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
+import { createHash, createPublicKey } from "node:crypto";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -116,9 +117,39 @@ describe("attest → verify", () => {
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toMatch(/not in allowed_identities/);
 
-    // a glob that matches the local identity ("local:user@host") passes
-    const loose = PolicySchema.parse({ allowed_identities: ["local:*"] });
-    expect(evaluatePolicy(result, loose).allowed).toBe(true);
+    // For ed25519 the allowlist binds to the VERIFIED key fingerprint, not the
+    // self-declared cert_identity: pinning the key's fingerprint passes.
+    const bundle = result.manifest!.signature!.bundle as {
+      signing_mode: string;
+      public_key_pem: string;
+    };
+    const der = createPublicKey(bundle.public_key_pem).export({
+      type: "spki",
+      format: "der",
+    });
+    const fp = "ed25519:" + createHash("sha256").update(der).digest("hex");
+    const pinned = PolicySchema.parse({ allowed_identities: [fp] });
+    expect(evaluatePolicy(result, pinned).allowed).toBe(true);
+  });
+
+  it("policy: identity allowlisting cannot be bypassed via the self-declared cert_identity (ed25519)", async () => {
+    // The signer's own key produces a valid signature, but cert_identity lives in
+    // the UNSIGNED signature block — so matching allowed_identities on that string
+    // would let any key impersonate a trusted signer. The allowlist must bind to
+    // the verified key fingerprint instead, so the self-declared identity (and a
+    // glob over it) must NOT authorize.
+    await attest(skillDir, { signingMode: "ed25519", keyDir });
+    const result = await verify(skillDir);
+    expect(result.ok).toBe(true);
+    const certIdentity = result.manifest!.signature!.cert_identity as string;
+
+    const viaCertIdentity = PolicySchema.parse({
+      allowed_identities: [certIdentity],
+    });
+    expect(evaluatePolicy(result, viaCertIdentity).allowed).toBe(false);
+
+    const viaGlob = PolicySchema.parse({ allowed_identities: ["local:*"] });
+    expect(evaluatePolicy(result, viaGlob).allowed).toBe(false);
   });
 
   it("policy: relaxed policy (signature not required) loads an unsigned-but-intact dir", async () => {
