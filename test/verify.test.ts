@@ -223,3 +223,26 @@ describe("attest → verify", () => {
     expect(decision.reason).toMatch(/allowlisted/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v0.7.0 fix — verify() reports a structured refusal, never an exception, when
+// the on-disk directory cannot be re-manifested.
+// ---------------------------------------------------------------------------
+describe("v0.7.0: verify reports a refusal (never throws) on an unattestable file", () => {
+  it("a post-sign file whose name carries a control char is BLOCKED (TAMPERED), not a crash", async () => {
+    await attest(skillDir, { signingMode: "ed25519", keyDir });
+    expect((await verify(skillDir)).ok).toBe(true);
+
+    // A newline is a legal POSIX filename byte, but FileEntrySchema rejects control
+    // characters — so re-walking the dir at verify time used to THROW (uncaught →
+    // the CLI exits 2 "error:") instead of returning a structured VerifyResult.
+    // Adding such a file after signing is a tamper and must verdict TAMPERED via a
+    // clean refusal, honoring verify()'s "never an exception" contract.
+    await fs.writeFile(path.join(skillDir, "e\nvil.txt"), "payload\n");
+
+    const result = await verify(skillDir); // must RESOLVE, not reject
+    expect(result.ok).toBe(false);
+    expect(result.blocked_reason).toBe("digest-mismatch");
+    expect(verdictOf(result)).toBe("TAMPERED");
+  });
+});

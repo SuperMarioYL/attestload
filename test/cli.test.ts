@@ -9,8 +9,9 @@
  * diverge again.
  */
 
-import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync, promises as fs } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,5 +44,57 @@ describe("cli version", () => {
   it("commander program is wired with the package version", () => {
     const program = buildProgram();
     expect(program.version()).toBe(pkgJsonVersion());
+  });
+});
+
+/**
+ * v0.7.0 — the `verify --allowlist` command fails loudly on a malformed
+ * allowlist file rather than silently degrading to "no allowlist" and refusing
+ * a cold-start skill with a misleading reason. Drives the real CLI action so the
+ * runVerify code path (not just the loader-guard library) is exercised.
+ */
+describe("v0.7.0: verify --allowlist reports a malformed allowlist file", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "attestload-cli-allow-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it("exits non-zero with a message naming the file (not a silent no-allowlist degrade)", async () => {
+    const skill = path.join(tmp, "skill");
+    await fs.mkdir(skill, { recursive: true });
+    const bad = path.join(tmp, "allow.json");
+    await fs.writeFile(bad, "{ not valid json");
+
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...a: unknown[]) => {
+        errors.push(a.map(String).join(" "));
+      });
+    const prevExit = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      await buildProgram().parseAsync([
+        "node",
+        "attestload",
+        "verify",
+        skill,
+        "--allowlist",
+        "--allowlist-file",
+        bad,
+      ]);
+      expect(process.exitCode).toBe(1);
+      const joined = errors.join("\n");
+      expect(joined).toMatch(/failed to load allowlist/i);
+      expect(joined).toContain("allow.json");
+    } finally {
+      spy.mockRestore();
+      process.exitCode = prevExit;
+    }
   });
 });

@@ -304,3 +304,53 @@ describe("v0.5.0 fix 1: a policy file inside the verified artifact dir is NOT ho
     expect(decision.reason).toMatch(/signature not required/i);
   });
 });
+
+/**
+ * Regression tests for the v0.7.0 allowlist-load fix.
+ *
+ * resolveContext (loader-guard) used to blanket `.catch(() => undefined)` the
+ * allowlist load — the same silent-swallow footgun v0.5.0 closed for the policy
+ * file, and inconsistent with the policy load in the very same function (which
+ * already fails loudly). A malformed allowlist file therefore degraded to "no
+ * allowlist", so a consumer's digest-pinned known-good skill was refused with a
+ * misleading `no-signature` reason and no hint the allowlist file was the cause.
+ * A missing file must still resolve cleanly (empty index); only a malformed one
+ * fails loudly with the file named.
+ */
+describe("v0.7.0 fix: a malformed allowlist file fails loudly (not silently swallowed)", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "attestload-allow-fix-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  const USE_ALLOWLIST = PolicySchema.parse({ use_allowlist: true });
+
+  it("a malformed allowlist file throws (naming the file) instead of degrading to no allowlist", async () => {
+    const skill = path.join(tmp, "skill");
+    await fs.mkdir(skill, { recursive: true }); // no attestation → verify() = no-manifest
+    const bad = path.join(tmp, "allow.json");
+    await fs.writeFile(bad, "{ not valid json");
+
+    await expect(
+      checkLoad(skill, { policy: USE_ALLOWLIST, allowlistFile: bad }),
+    ).rejects.toThrow(/allow\.json/);
+  });
+
+  it("a missing allowlist file still resolves cleanly (empty index, no throw)", async () => {
+    const skill = path.join(tmp, "skill");
+    await fs.mkdir(skill, { recursive: true });
+    const missing = path.join(tmp, "does-not-exist.json");
+
+    // Must NOT throw: a missing file is a normal empty index, not an error.
+    const decision = await checkLoad(skill, {
+      policy: USE_ALLOWLIST,
+      allowlistFile: missing,
+    });
+    expect(decision.allowed).toBe(false); // refused (no-manifest), but did not crash
+  });
+});

@@ -90,9 +90,15 @@ async function resolveContext(
     options.policy ??
     (await loadPolicy(options.policyFile ? { file: options.policyFile } : {}));
 
+  // A malformed allowlist must fail loudly, symmetrically with the policy load
+  // above (loadPolicy is likewise not swallowed here): a missing file is normal
+  // (loadAllowlist returns an empty index), but silently catching a parse error
+  // to `undefined` (the old `.catch(() => undefined)`) hid a typo'd allowlist and
+  // refused a known-good cold-start skill with a misleading reason. Let the error
+  // — which already names the offending file — propagate to the caller.
   let allowlist: Allowlist | undefined = options.allowlist;
   if (!allowlist && policy.use_allowlist) {
-    allowlist = await loadAllowlist(options.allowlistFile).catch(() => undefined);
+    allowlist = await loadAllowlist(options.allowlistFile);
   }
   return { policy, allowlist };
 }

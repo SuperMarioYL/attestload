@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-07-14
+
+A verify-path robustness and configuration-honesty release. Two correctness
+fixes, each grounded in the shipped source and pinned by a regression test. No
+attestation format change — existing attestations verify unchanged.
+
+### Fixed
+- **`verify` now reports a structured refusal instead of crashing when a
+  directory cannot be re-manifested.** The verify-time directory re-walk was not
+  guarded, and a file whose name contains a control character (a byte a POSIX
+  filename may legally hold) is rejected by the manifest schema. Adding such a
+  file to a signed directory after signing therefore made `verify` throw and the
+  CLI exit with a generic tool error (`error:`, exit 2) instead of a clean
+  **BLOCKED** (exit 1). Such a post-sign addition is now correctly reported as
+  `digest-mismatch` (verdict **TAMPERED**) through the normal result path, so the
+  gate refuses — never crashes — on a tampered directory.
+- **A malformed allowlist file now fails loudly instead of being silently
+  ignored.** Both `attestload verify --allowlist` and the `guardLoad`/`checkLoad`
+  library path swallowed any error while loading the verified-skill allowlist,
+  so a single JSON typo in an allowlist file silently degraded to "no allowlist"
+  — a consumer's digest-pinned known-good skill was then refused with a
+  misleading "no signature" reason and no hint that the allowlist file was the
+  cause. A **missing** allowlist file is still a normal empty index, but a
+  **malformed** one now surfaces the parse error (naming the file) with a
+  non-zero exit, mirroring how a malformed policy file already behaves.
+
 ## [0.6.0] - 2026-07-11
 
 A trust-boundary correctness release closing an identity-allowlist bypass. No

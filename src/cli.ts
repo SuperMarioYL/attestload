@@ -165,10 +165,37 @@ async function runVerify(
     ? { ...policy, use_allowlist: true }
     : policy;
 
-  const allowlist =
-    effectivePolicy.use_allowlist
-      ? await loadAllowlist(opts.allowlistFile).catch(() => undefined)
-      : undefined;
+  // Load the allowlist for the cold-start path. A MISSING file is normal
+  // (loadAllowlist returns an empty index), but a present-but-malformed file must
+  // fail loudly — exactly as an explicit --policy does above. Silently swallowing
+  // it to `undefined` (the old `.catch(() => undefined)`) turned a typo'd
+  // allowlist into "no allowlist", so a consumer's digest-pinned known-good skill
+  // was refused with a misleading `no-signature` reason and no hint that the
+  // allowlist file was the cause. Surface the real error with the file named.
+  // Load the allowlist for the cold-start path. A MISSING file is normal
+  // (loadAllowlist returns an empty index), but a present-but-malformed file must
+  // fail loudly — exactly as an explicit --policy does above. Silently swallowing
+  // it to `undefined` (the old `.catch(() => undefined)`) turned a typo'd
+  // allowlist into "no allowlist", so a consumer's digest-pinned known-good skill
+  // was refused with a misleading `no-signature` reason and no hint that the
+  // allowlist file was the cause. Surface the real error with the file named.
+  let allowlist;
+  if (effectivePolicy.use_allowlist) {
+    try {
+      allowlist = await loadAllowlist(opts.allowlistFile);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const where = opts.allowlistFile ? "--allowlist-file" : "default allowlist";
+      out(
+        json,
+        { allowed: false, message: `allowlist load failed (${where}): ${msg}` },
+        () => {
+          console.error(red(`BLOCKED: failed to load allowlist (${where}): ${msg}`));
+        },
+      );
+      return 1;
+    }
+  }
 
   const decision = evaluatePolicy(result, effectivePolicy, allowlist);
   const verdict = verdictOf(result);

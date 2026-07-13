@@ -210,11 +210,31 @@ export async function verify(dir: string): Promise<VerifyResult> {
     );
   }
 
-  // 2. recompute the file manifest + roll-up digest, compare to the signed value
-  const recomputedFiles = await buildFileManifest(root, {
-    exclude: [`${ATTESTATION_DIR}/${ATTESTATION_FILE}`],
-  });
-  const recomputedDigest = rollupDigest(recomputedFiles);
+  // 2. recompute the file manifest + roll-up digest, compare to the signed value.
+  //
+  // buildFileManifest walks the on-disk directory and validates each leaf with
+  // FileEntrySchema, which rejects a path carrying a control character (a byte a
+  // POSIX filename may legally hold). If a file with such a name is added AFTER
+  // signing, the walk throws — which would turn a directory that should verdict
+  // TAMPERED into an uncaught exception (the CLI exits 2 "error:", not a clean
+  // BLOCKED exit 1). That breaks this module's contract of always returning a
+  // structured VerifyResult and never throwing. Treat any recompute failure as a
+  // refusal: the directory on disk cannot be re-manifested to match what was
+  // signed, which is exactly a post-sign modification → digest-mismatch/TAMPERED.
+  let recomputedFiles;
+  let recomputedDigest: string;
+  try {
+    recomputedFiles = await buildFileManifest(root, {
+      exclude: [`${ATTESTATION_DIR}/${ATTESTATION_FILE}`],
+    });
+    recomputedDigest = rollupDigest(recomputedFiles);
+  } catch {
+    return blocked(
+      "digest-mismatch",
+      "the directory could not be re-manifested to check against the signed attestation — it contains an unattestable file (e.g. a name with a control character) added or changed after signing",
+      manifest,
+    );
+  }
 
   // An attestation that covers zero files is meaningless: rollupDigest([])
   // collapses to a fixed empty-string sha256, so an "empty but signed" payload
