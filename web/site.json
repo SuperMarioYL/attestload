@@ -6,14 +6,14 @@
   "lang": { "primary": "zh", "toggle": true },
   "accent": ["#1f9d6b", "#0e7a52", "#0a5c3f"],
   "hero": {
-    "eyebrow": { "zh": "加载前证明 · SBOM · 溯源签名", "en": "Attest before load · SBOM · Signed provenance" },
+    "eyebrow": { "zh": "Skill 装前先验真 · 被改过就拒", "en": "Verify a Skill before it loads · refuse what's been touched" },
     "headline": {
-      "zh": "Coding Agent 加载 Skill 前\n先拒绝未签名的代码",
-      "en": "Before your agent loads a Skill\nit refuses unsigned code"
+      "zh": "Agent 装 Skill 前\n先确认它没被偷偷改过",
+      "en": "Before your agent loads a Skill\nmake sure nobody tampered with it"
     },
     "sub": {
-      "zh": "attestload 为每个 Skill / MCP server 目录派生内容寻址的 SBOM、捕获 git 溯源并签名（Sigstore keyless 或本地 ed25519）；verify 在加载前逐字节校验，被篡改或未签名即以退出码 1 拒绝。",
-      "en": "attestload derives a content-addressed SBOM for each Skill / MCP-server directory, captures git provenance, and signs it (Sigstore keyless or local ed25519); verify checks it byte-for-byte before load and refuses anything tampered or unsigned with exit code 1."
+      "zh": "你的 Coding Agent 会按 star 数自动安装 Skill 和 MCP server，但没人真读过那些代码。attestload 在加载前核对每一份产物是不是它声称的那个：被篡改或没签名，一律拒绝运行。",
+      "en": "Your coding agent auto-installs Skills and MCP servers by star count, but nobody reads that code. attestload checks every artifact before it loads — is it really what it claims to be? If it's been tampered or isn't signed, it gets refused."
     },
     "command": "attestload verify ./downloaded-skill",
     "cta": { "zh": "开始使用", "en": "Get started" },
@@ -22,36 +22,36 @@
   },
   "advantages": [
     {
-      "title": { "zh": "attest-before-load：一个新动词", "en": "attest-before-load: a new verb" },
+      "title": { "zh": "信任从 star 数变成事实", "en": "Trust stops being a star count" },
       "body": {
-        "zh": "成熟的 SBOM / SLSA / Sigstore 原语第一次接到 agent 加载 Skill 的那条路径上：verify 用退出码 0 / 1 直接做 CI 与 git hook 的闸门。要给容器镜像签名用 cosign，要扫 CVE 用 Trivy——但让 Coding Agent 在加载前拒绝未经证明的代码，这个动词目前只有 attestload。",
-        "en": "Mature SBOM / SLSA / Sigstore primitives, wired for the first time into the agent's skill-loading path: verify's 0 / 1 exit code is the gate for CI and git hooks. Use cosign to sign container images and Trivy to scan CVEs — but refusing unattested code before a coding agent loads it is a verb only attestload has."
+        "zh": "挑 Skill 的依据基本只有 star 数，而自主 agent 会跳过人工审阅直接自动安装——这正是供应链攻击的入口。attestload 把每一份产物的信任换成一次密码学核对：是谁建的、从哪个版本来、加载前有没有被改过，一次说清。",
+        "en": "Picking a Skill comes down to star count, and your agent auto-installs it without anyone reading the code — the perfect entry for a supply-chain attack. attestload turns that trust into a single cryptographic check: who built it, which version it came from, and whether it's been touched before load."
       },
-      "chips": ["› exit 0 = PASS · exit 1 = BLOCKED", "› CI / git-hook 闸门"]
+      "chips": ["› 不再靠 star 数赌信任", "› 谁建的 · 哪个版本 · 有没有被改"]
     },
     {
-      "title": { "zh": "随目录分发的证明清单", "en": "An attestation manifest that travels with the directory" },
+      "title": { "zh": "签名后塞进去的文件，加载前就抓到", "en": "A file slipped in after signing gets caught before load" },
       "body": {
-        "zh": "attest 产出一个签名包，随 Skill / MCP 目录一起分发：subject（名称 / 版本 / 目录 sha256 摘要）、SPDX-lite SBOM、内容寻址的逐文件清单（path · sha256 · size）、SLSA-lite 溯源，以及 Sigstore + Rekor 日志索引（或 ed25519 本地兜底）的签名。",
-        "en": "attest emits a signed bundle that ships alongside the Skill / MCP directory: subject (name / version / directory sha256 digest), an SPDX-lite SBOM, a content-addressed per-file manifest (path · sha256 · size), SLSA-lite provenance, and a Sigstore + Rekor log-index signature (or a local ed25519 fallback)."
+        "zh": "有人在一个看起来靠谱的 Skill 里偷偷多塞一个文件、改一行代码，光看目录看不出来。attestload 加载前把整份内容重新核对一遍：多一个文件、少一个字节都对不上，直接拒绝运行。",
+        "en": "Someone slips an extra file or changes one line inside a Skill that looks legit — invisible to the eye. attestload re-checks the whole thing before load: one extra file or one changed byte won't match, and it gets refused."
       },
-      "chips": ["› SPDX-lite SBOM", "› SLSA-lite 溯源 · Rekor 日志"]
+      "chips": ["› 多一个文件就拒", "› 改一个字节也跑不动"]
     },
     {
-      "title": { "zh": "被篡改即 TAMPERED，未签名即 UNSIGNED", "en": "Tampered → TAMPERED, unsigned → UNSIGNED" },
+      "title": { "zh": "还没签名的，先靠一份已验过的名单兜底", "en": "What isn't signed yet is covered by a pre-verified list" },
       "body": {
-        "zh": "verify 在加载前重算目录摘要并逐字节比对：签名之后再塞进一个文件会被判 digest-mismatch（TAMPERED），没有清单则 UNSIGNED——两者都以退出码 1 拒绝，绝不因坏输入而崩溃。策略可要求 provenance、有效签名，以及允许的签名身份。",
-        "en": "verify re-hashes the directory and compares byte-for-byte before load: a file slipped in after signing is caught as digest-mismatch (TAMPERED), a missing manifest is UNSIGNED — both refuse with exit code 1 and never crash on bad input. Policy can require provenance, a valid signature, and allowed signer identities."
+        "zh": "让全世界每个 Skill 都先签名要时间。在那之前，attestload 带一份已验过的热门 Skill 名单当兜底，命中就放行；你也能钉死自己信任的版本，别的版本一律拒。",
+        "en": "Getting every Skill on earth signed first takes time. Until then, attestload ships with a pre-verified list of popular Skills as a floor — hit it and it passes; you can also pin the exact version you trust and refuse anything else."
       },
-      "chips": ["› TAMPERED / UNSIGNED / PASS", "› require_provenance · allowed_identities"]
+      "chips": ["› 热门 Skill 名单兜底", "› 钉死你信任的版本"]
     },
     {
-      "title": { "zh": "单 CLI · 离线优先 · 白名单兜底冷启动", "en": "One CLI, offline-first, allowlist for cold start" },
+      "title": { "zh": "每次提交前自动把关，不用记得去查", "en": "Checked on every commit — you don't have to remember" },
       "body": {
-        "zh": "一个 Node CLI，无服务、无数据库、无 Kubernetes，仅在签名 / 验签时访问公共 Sigstore。作者还没签名时，index 维护一份已验证 Skill 的摘要白名单先兜底；guard install 再往仓库装一个 git pre-commit 钩子，每次提交前自动校验。",
-        "en": "A single Node CLI — no service, no database, no Kubernetes; it touches the public Sigstore only when signing or verifying. Before authors sign, index keeps a digest allowlist of verified Skills as a cold-start floor; guard install drops a git pre-commit hook that verifies before every commit."
+        "zh": "靠人记得「装前先验」不现实。attestload 往你的仓库装一个提交前的钩子，每次提交自动核对，有人动了手脚提交就被挡下——本地运行，无需自建服务。",
+        "en": "Relying on people to 'check before install' doesn't scale. attestload drops a pre-commit hook in your repo that re-checks every commit automatically — if anyone touched something, the commit gets blocked. It runs locally, with no service of your own to stand up."
       },
-      "chips": ["› 无服务 · 无数据库", "› index 白名单 · guard 钩子"]
+      "chips": ["› 提交前自动核对", "› 本地运行 · 无需自建服务"]
     }
   ],
   "scene": {
@@ -59,17 +59,17 @@
     "nodes": ["subject", "sbom", "files", "provenance", "signature"]
   },
   "cta": {
-    "headline": { "zh": "让 agent 加载前先证明", "en": "Attest it before your agent loads it" },
+    "headline": { "zh": "让 agent 加载前先过这一关", "en": "Make your agent pass this gate before it loads anything" },
     "sub": {
-      "zh": "MIT 许可，npm i -g attestload 即用：attest 签发证明，verify 拒绝未证明代码，index 兜底冷启动。",
-      "en": "MIT-licensed, npm i -g attestload and go: attest issues an attestation, verify refuses unattested code, index covers the cold start."
+      "zh": "MIT 许可，一行命令装好：冷启动有名单兜底，每次提交自动把关，被改过或没签名的代码加载前一律挡下。",
+      "en": "MIT-licensed, one line to install: the cold start is covered by a verified list, every commit is checked, and anything tampered or unsigned is blocked before load."
     },
     "button": { "zh": "在 GitHub 查看", "en": "View on GitHub" }
   },
   "footer": {
     "tag": {
-      "zh": "面向 Coding Agent 的 attest-before-load 拒绝闸门",
-      "en": "The attest-before-load gate for coding agents"
+      "zh": "Skill 装进 Agent 前的那道关卡",
+      "en": "The gate a Skill passes before your agent loads it"
     }
   }
 }
