@@ -3,7 +3,7 @@
   "version": "0.7.0",
   "description": "Attest-before-load gate for coding agents: sign AI agent Skills and MCP servers into verifiable SBOM + provenance attestations, and refuse to load unattested code.",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "SuperMarioYL",
   "homepage": "https://github.com/SuperMarioYL/attestload#readme",
   "repository": {
