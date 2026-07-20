@@ -9,7 +9,7 @@
 <p><sub>AttestLoad 给每个 Skill 与 MCP server 装上可验证的 SBOM 与构建溯源签名，让 Coding Agent 在加载前拒绝任何未经签名的代码——信任从 star 数变成密码学事实。</sub></p>
 
 <p align="center">
-  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-1D1D1F"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1D1D1F"></a>
   <a href="https://github.com/SuperMarioYL/attestload/releases"><img alt="Release" src="https://img.shields.io/github/v/release/SuperMarioYL/attestload?color=E0541B"></a>
   <a href="https://github.com/SuperMarioYL/attestload/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/SuperMarioYL/attestload/ci.yml?branch=main&label=ci"></a>
   <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white">
