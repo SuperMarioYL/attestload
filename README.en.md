@@ -9,7 +9,7 @@
 <p><sub>AttestLoad gives every Skill and MCP server a verifiable SBOM + build-provenance signature, so a coding agent refuses any unsigned code before it loads — trust stops being star count and becomes a cryptographic fact.</sub></p>
 
 <p align="center">
-  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-1D1D1F"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-1D1D1F"></a>
   <a href="https://github.com/SuperMarioYL/attestload/releases"><img alt="Release" src="https://img.shields.io/github/v/release/SuperMarioYL/attestload?color=E0541B"></a>
   <a href="https://github.com/SuperMarioYL/attestload/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/SuperMarioYL/attestload/ci.yml?branch=main&label=ci"></a>
   <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A522-339933?logo=node.js&logoColor=white">
@@ -197,7 +197,7 @@ Smallest "here's my credit card" path: the free CLI proves the refuse-then-pass 
 
 <h2 id="license"><img src="https://api.iconify.design/tabler:license.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> License & contributing</h2>
 
-MIT — see [LICENSE](./LICENSE). Issues and PRs are welcome — especially a reference integration that adds an `attestload.manifest.json` to a popular Skill / MCP-server repo. File one [here](https://github.com/SuperMarioYL/attestload/issues).
+Apache-2.0 — see [LICENSE](./LICENSE). Issues and PRs are welcome — especially a reference integration that adds an `attestload.manifest.json` to a popular Skill / MCP-server repo. File one [here](https://github.com/SuperMarioYL/attestload/issues).
 
 After pushing, set the repo topics: `gh repo edit --add-topic mcp --add-topic coding-agent --add-topic skill --add-topic sbom`
 
@@ -209,4 +209,4 @@ AttestLoad — the attest-before-load gate for coding agents. Sign your Skill / 
 
 ---
 
-<p align="center"><sub><a href="./LICENSE">MIT</a> © 2026 SuperMarioYL</sub></p>
+<p align="center"><sub><a href="./LICENSE">Apache-2.0</a> © 2026 SuperMarioYL</sub></p>

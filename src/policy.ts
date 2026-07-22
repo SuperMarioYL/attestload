@@ -28,7 +28,6 @@ import { parse as parseYaml } from "yaml";
 import {
   DEFAULT_POLICY,
   PolicySchema,
-  type AttestationManifest,
   type Allowlist,
   type Policy,
   type VerifyResult,
@@ -133,12 +132,26 @@ export async function loadPolicy(options: {
  * migrated to the key fingerprint; a previously-allowed artifact now refuses
  * rather than being impersonable.)
  *
- * For sigstore the identity comes from the OIDC-issued certificate that the
- * bundle verification (verify.ts) cryptographically gates, so the manifest's
- * `cert_identity` is used as-is.
+ * For sigstore the identity is derived from the VERIFIED Sigstore bundle's
+ * certificate SAN (the OIDC email/URI Fulcio issued the leaf cert for, which
+ * `@sigstore/verify` already chained against Fulcio's root), surfaced onto the
+ * VerifyResult by verify.ts as `verified_signer_identity`. The manifest's
+ * self-declared `signature.cert_identity` is NOT used: it lives INSIDE the
+ * signature block, which is STRIPPED from the signed canonical body
+ * (verify.ts canonicalizes the manifest minus its signature), so
+ * `cert_identity` is not covered by the Sigstore signature and any holder of
+ * a valid keyless attestation could rewrite it to a value in a consumer's
+ * `allowed_identities` — `verifySigstore` still returns true (the bundle
+ * validly signs the unchanged body) and the forged identity would match. This
+ * closes the sigstore twin of the v0.6.0 ed25519 `cert_identity` bypass: every
+ * signing mode's identity is now cryptographically bound, never self-declared.
+ * An empty/absent `verified_signer_identity` yields `""` so the allowlist
+ * check fails CLOSED. Non-breaking for honest attestations: the bundle's cert
+ * SAN equals the email `cert_identity` was derived from at signing time.
  */
-function boundSignerIdentity(m: AttestationManifest): string {
-  const bundle = m.signature?.bundle as
+function boundSignerIdentity(result: VerifyResult): string {
+  const m = result.manifest;
+  const bundle = m?.signature?.bundle as
     | { signing_mode?: string; public_key_pem?: string }
     | undefined;
   if (
@@ -157,7 +170,9 @@ function boundSignerIdentity(m: AttestationManifest): string {
       return "";
     }
   }
-  return m.signature?.cert_identity ?? "";
+  // sigstore: the cryptographically-verified cert SAN surfaced by verify.ts.
+  // Never the self-declared signature.cert_identity (unsigned + forgeable).
+  return result.verified_signer_identity ?? "";
 }
 
 /** Match an identity against a pattern supporting a trailing/embedded `*`. */
@@ -202,9 +217,10 @@ export function evaluatePolicy(
 
     if (policy.allowed_identities.length > 0) {
       // Match against the cryptographically-bound signer identity (the verified
-      // key fingerprint for ed25519), NOT the self-declared cert_identity, which
-      // an attacker's own key could set to impersonate an allowed signer.
-      const identity = boundSignerIdentity(m);
+      // key fingerprint for ed25519, or the verified sigstore cert SAN), NOT the
+      // self-declared cert_identity, which an attacker's own key (or a forged
+      // sigstore bundle field) could set to impersonate an allowed signer.
+      const identity = boundSignerIdentity(result);
       const ok = policy.allowed_identities.some((p) =>
         identityMatches(p, identity),
       );

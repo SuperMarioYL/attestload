@@ -354,3 +354,135 @@ describe("v0.7.0 fix: a malformed allowlist file fails loudly (not silently swal
     expect(decision.allowed).toBe(false); // refused (no-manifest), but did not crash
   });
 });
+
+// ---------------------------------------------------------------------------
+// v0.8.0 fix — sigstore allowed_identities bypass via the unsigned
+// cert_identity field. The sigstore twin of the v0.6.0 ed25519 bypass.
+// ---------------------------------------------------------------------------
+describe("v0.8.0 fix: sigstore allowed_identities binds to the verified cert SAN, not the forgeable cert_identity", () => {
+  // For sigstore, boundSignerIdentity used to return the self-declared
+  // signature.cert_identity — but that field lives INSIDE the signature block,
+  // which verify.ts STRIPS before computing the signed canonical body
+  // (canonicalize(manifest minus signature)). So cert_identity is NOT covered
+  // by the Sigstore signature: any holder of a valid keyless attestation could
+  // rewrite it to a value in a consumer's allowed_identities, verifySigstore
+  // would still return true (the bundle validly signs the unchanged body), and
+  // the forged identity would match -> the gate ALLOWED attacker code as a
+  // trusted signer.
+  //
+  // The fix derives the sigstore identity from the VERIFIED bundle's cert SAN
+  // (surfaced onto the VerifyResult as verified_signer_identity by verify.ts,
+  // pulled from @sigstore/verify's Signer.identity.subjectAlternativeName -- the
+  // OIDC email/URI Fulcio issued the cert for, chained against Fulcio's root).
+  // allowed_identities now binds to THAT, never the forgeable field.
+  //
+  // These tests synthesize a verified sigstore VerifyResult offline: a real
+  // keyless sigstore attestation needs network + an OIDC token, but the gate's
+  // BINDING (policy.ts boundSignerIdentity) is the logic under test and is
+  // deterministic given the VerifyResult. The synthesized identity is the value
+  // verify.ts would surface for a real verified bundle.
+
+  const REAL_SAN = "attacker@example.com"; // the cert SAN @sigstore/verify chained
+  const FORGED = "trusted@example.com"; // what the attacker rewrote cert_identity to
+
+  /** A VERIFIED sigstore result whose self-declared cert_identity was FORGED. */
+  function verifiedSigstoreResult(
+    verifiedSan: string,
+    forgedCertIdentity: string,
+  ): VerifyResult {
+    return {
+      ok: true,
+      message: "PASS -- attestation verified, code is safe to load",
+      // The cryptographically-bound identity verify.ts surfaced from the
+      // verified bundle's cert SAN (the attacker's REAL OIDC email).
+      verified_signer_identity: verifiedSan,
+      manifest: {
+        ...fakeManifest("some-mcp-server", DIGEST_A),
+        signature: {
+          rekor_log_index: 42,
+          // The forgeable, UNSIGNED field -- the attacker rewrote it to a value
+          // the consumer's allowlist trusts, hoping the gate matches on it.
+          cert_identity: forgedCertIdentity,
+          cert_issuer: "sigstore",
+          bundle: { signing_mode: "sigstore", sigstore: {} },
+        },
+      },
+    };
+  }
+
+  it("a forged cert_identity in the consumer's allowlist does NOT authorize (binds to the verified SAN)", () => {
+    // The consumer trust-lists the value the attacker rewrote cert_identity to.
+    // The OLD code matched cert_identity -> ALLOWED (the bypass). The fix binds
+    // allowed_identities to the cryptographically-verified cert SAN, which is
+    // the attacker's REAL email and is NOT allowlisted -> REFUSED.
+    const result = verifiedSigstoreResult(REAL_SAN, FORGED);
+    const policy = PolicySchema.parse({ allowed_identities: [FORGED] });
+    const decision = evaluatePolicy(result, policy);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toContain(REAL_SAN);
+    expect(decision.reason).toMatch(/not in allowed_identities/);
+  });
+
+  it("an honest sigstore attestation still authorizes when the real SAN is allowlisted (non-breaking)", () => {
+    // Honest case: cert_identity was set from the same email as the cert SAN,
+    // so they agree. An allowlist pinning that identity still passes under the
+    // fix -- only FORGED cert_identity values (!= the verified SAN) are refused.
+    const result = verifiedSigstoreResult(REAL_SAN, REAL_SAN);
+    const policy = PolicySchema.parse({ allowed_identities: [REAL_SAN] });
+    const decision = evaluatePolicy(result, policy);
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).toMatch(/identity allowed/);
+  });
+
+  it("an empty/absent verified SAN fails closed (no forgeable fallback to cert_identity)", () => {
+    // If @sigstore/verify surfaced no SAN (defensively), the bound identity is
+    // "" -- matching nothing -- so the gate refuses EVEN IF the forged
+    // cert_identity is allowlisted. The unsigned field is never a fallback.
+    const result = verifiedSigstoreResult("", FORGED);
+    const policy = PolicySchema.parse({ allowed_identities: [FORGED] });
+    const decision = evaluatePolicy(result, policy);
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toMatch(/not in allowed_identities/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.8.0 fix -- a schema-malformed allowlist (valid JSON, wrong shape) now
+// names the file, not only JSON-syntax errors.
+// ---------------------------------------------------------------------------
+describe("v0.8.0 fix: a schema-malformed allowlist (valid JSON, wrong shape) names the file", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "attestload-allow-schema-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  const USE_ALLOWLIST = PolicySchema.parse({ use_allowlist: true });
+
+  it("a schema-malformed allowlist rejects and names the file (not only JSON-syntax errors)", async () => {
+    // The v0.7.0 fix pinned only the JSON-syntax case (a SyntaxError wrapped
+    // with the path). A ZodError from AllowlistSchema.parse -- valid JSON but a
+    // wrong-shape entry, e.g. an artifact_digest that isn't a sha256 -- used to
+    // fall through to the bare `throw err` with no filename, so the CLI labeled
+    // it by option name (--allowlist-file) rather than the actual path. Now
+    // every non-ENOENT error names the file, mirroring parsePolicyFile.
+    const skill = path.join(tmp, "skill");
+    await fs.mkdir(skill, { recursive: true }); // no attestation -> verify() = no-manifest
+    const bad = path.join(tmp, "bad-schema.json");
+    await fs.writeFile(
+      bad,
+      JSON.stringify({
+        schema: "attestload-allowlist/v1",
+        entries: [{ name: "x", artifact_digest: "not-a-sha256" }],
+      }),
+    );
+
+    await expect(
+      checkLoad(skill, { policy: USE_ALLOWLIST, allowlistFile: bad }),
+    ).rejects.toThrow(/bad-schema\.json/);
+  });
+});

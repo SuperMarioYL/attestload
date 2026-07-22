@@ -41,14 +41,20 @@ export async function loadAllowlist(file?: string): Promise<Allowlist> {
     const raw = await fs.readFile(target, "utf8");
     return AllowlistSchema.parse(JSON.parse(raw));
   } catch (err) {
-    // A missing file is normal (empty index). A present-but-broken file is not.
+    // A missing file is normal (empty index). A present-but-broken file is not:
+    // wrap EVERY non-ENOENT failure with the target path, mirroring
+    // parsePolicyFile in policy.ts. The old code wrapped only `SyntaxError`
+    // (invalid JSON); a `ZodError` thrown by `AllowlistSchema.parse` -- valid
+    // JSON but a wrong-shape entry, e.g. an `artifact_digest` that isn't a
+    // sha256 -- fell through to the bare `throw err` with no filename, and the
+    // CLI then labeled it by option name (`--allowlist-file`) rather than the
+    // actual path. Now every parse/schema error names the file so the user can
+    // find it.
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       return AllowlistSchema.parse({});
     }
-    if (err instanceof SyntaxError) {
-      throw new Error(`allowlist at ${target} is not valid JSON: ${err.message}`);
-    }
-    throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`allowlist at ${target} failed to load: ${msg}`);
   }
 }
 

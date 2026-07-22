@@ -132,19 +132,37 @@ function verifyEd25519(
  *
  * `@sigstore/verify` is imported dynamically and treated as untyped: the dep is
  * optional at type-check time, and any failure (missing dep, offline, bad
- * inclusion proof, body mismatch) resolves to `false` rather than throwing — the
- * caller turns that into a `signature-invalid` verdict. The signed body is
- * supplied as the artifact the bundle must attest to.
+ * inclusion proof, body mismatch) resolves to `{ ok: false, identity: "" }`
+ * rather than throwing — the caller turns that into a `signature-invalid`
+ * verdict. The signed body is supplied as the artifact the bundle must attest
+ * to.
+ *
+ * On success the returned `identity` is the cryptographically-VERIFIED signer
+ * identity: the certificate Subject Alternative Name (the OIDC email/URI Fulcio
+ * issued the leaf cert for) that `@sigstore/verify` already chained against
+ * Fulcio's root, exposed on the returned `Signer` object. This is the value an
+ * attacker CANNOT forge without controlling Fulcio — unlike the manifest's
+ * self-declared `signature.cert_identity`, which lives INSIDE the unsigned
+ * signature block and is therefore NOT covered by the Sigstore signature (see
+ * `boundSignerIdentity` in policy.ts). The caller surfaces it onto the
+ * VerifyResult so `allowed_identities` binds to it. Non-breaking for honest
+ * attestations: the bundle's cert SAN equals the email `cert_identity` was
+ * derived from at signing time (attest.ts `extractIdentity` reads the JWT
+ * `email` claim, and Fulcio puts that same email in the cert's rfc822Name SAN).
  */
 export async function verifySigstore(
   body: string,
   bundle: Extract<SignatureBundle, { signing_mode: "sigstore" }>,
-): Promise<boolean> {
+): Promise<{ ok: boolean; identity: string }> {
   try {
     const mod = (await import("@sigstore/verify")) as unknown as {
       toSignedEntity: (b: unknown, artifact?: Buffer) => unknown;
       toTrustMaterial: (root: unknown) => unknown;
-      Verifier: new (tm: unknown) => { verify: (e: unknown) => unknown };
+      Verifier: new (tm: unknown) => {
+        verify: (e: unknown) => {
+          identity?: { subjectAlternativeName?: string };
+        };
+      };
     };
     const bundleMod = (await import("@sigstore/bundle")) as unknown as {
       bundleFromJSON: (j: unknown) => unknown;
@@ -152,12 +170,12 @@ export async function verifySigstore(
 
     // `@sigstore/tuf` supplies the public trusted root but is an indirect dep;
     // resolve it through an opaque specifier so a missing/absent package
-    // degrades to `false` (signature-invalid) instead of a type/resolve error.
+    // degrades to a refusal (signature-invalid) instead of a type/resolve error.
     const tufSpecifier = "@sigstore/tuf";
     const tufMod = (await import(/* @vite-ignore */ tufSpecifier).catch(
       () => undefined,
     )) as { getTrustedRoot: () => Promise<unknown> } | undefined;
-    if (!tufMod) return false;
+    if (!tufMod) return { ok: false, identity: "" };
 
     const trustedRoot = await tufMod.getTrustedRoot();
     const trustMaterial = mod.toTrustMaterial(trustedRoot);
@@ -165,10 +183,18 @@ export async function verifySigstore(
 
     const parsed = bundleMod.bundleFromJSON(bundle.sigstore);
     const entity = mod.toSignedEntity(parsed, Buffer.from(body, "utf8"));
-    verifier.verify(entity); // throws on failure
-    return true;
+    // verifier.verify throws on any failure (bad cert chain against Fulcio's
+    // root, bad Rekor inclusion proof, body mismatch). On success it returns
+    // the Signer carrying the cryptographically-bound certificate identity —
+    // the SAN the leaf cert was issued for and whose chain @sigstore/verify
+    // just validated against the trusted root. An attacker who rewrites the
+    // manifest's self-declared `cert_identity` cannot change THIS value without
+    // a certificate Fulcio actually issued to them.
+    const signer = verifier.verify(entity);
+    const identity = signer.identity?.subjectAlternativeName ?? "";
+    return { ok: true, identity };
   } catch {
-    return false;
+    return { ok: false, identity: "" };
   }
 }
 
@@ -317,10 +343,18 @@ export async function verify(dir: string): Promise<VerifyResult> {
   const canonical = canonicalize(body);
 
   let sigOk: boolean;
+  // For a sigstore verification, the cryptographically-bound signer identity
+  // (the cert SAN @sigstore/verify chained against Fulcio's root) is surfaced
+  // here so policy.ts can bind `allowed_identities` to it instead of the
+  // forgeable, unsigned `signature.cert_identity`. ed25519 has no such value —
+  // its identity IS the verified key fingerprint, computed in policy.ts.
+  let verifiedSignerIdentity: string | undefined = undefined;
   if (bundle.signing_mode === "ed25519") {
     sigOk = verifyEd25519(canonical, bundle);
   } else if (bundle.signing_mode === "sigstore") {
-    sigOk = await verifySigstore(canonical, bundle);
+    const sigstoreResult = await verifySigstore(canonical, bundle);
+    sigOk = sigstoreResult.ok;
+    verifiedSignerIdentity = sigstoreResult.identity;
   } else {
     return blocked(
       "signature-invalid",
@@ -338,12 +372,20 @@ export async function verify(dir: string): Promise<VerifyResult> {
   }
 
   // all checks passed
-  return {
+  const verified: VerifyResult = {
     ok: true,
     message: "PASS — attestation verified, code is safe to load",
     provenance_summary: provenanceSummary(manifest),
     manifest,
   };
+  // Only a sigstore verification surfaces a verified cert SAN. The field's
+  // presence itself signals "this identity came from a verified sigstore
+  // bundle"; an empty/absent SAN leaves it unset so policy.ts's
+  // `?? ""` fails the allowlist check closed.
+  if (verifiedSignerIdentity) {
+    verified.verified_signer_identity = verifiedSignerIdentity;
+  }
+  return verified;
 }
 
 /** Convenience: stable handle so the canonical content digest can be logged. */

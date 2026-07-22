@@ -197,7 +197,7 @@ attestload guard install
 
 <h2 id="许可证"><img src="https://api.iconify.design/tabler:license.svg?color=%230071E3&width=24" height="22" align="absmiddle" alt=""> 许可证 & 参与贡献</h2>
 
-MIT，见 [LICENSE](./LICENSE)。欢迎提 [Issue](https://github.com/SuperMarioYL/attestload/issues) 或 PR——尤其欢迎为某个 Skill / MCP server 仓库补上一份 `attestload.manifest.json` 的参考集成。
+Apache-2.0，见 [LICENSE](./LICENSE)。欢迎提 [Issue](https://github.com/SuperMarioYL/attestload/issues) 或 PR——尤其欢迎为某个 Skill / MCP server 仓库补上一份 `attestload.manifest.json` 的参考集成。
 
 推送后建议设置仓库 topics：`gh repo edit --add-topic mcp --add-topic coding-agent --add-topic skill --add-topic sbom`
 
@@ -209,4 +209,4 @@ AttestLoad — the attest-before-load gate for coding agents. Sign your Skill / 
 
 ---
 
-<p align="center"><sub><a href="./LICENSE">MIT</a> © 2026 SuperMarioYL</sub></p>
+<p align="center"><sub><a href="./LICENSE">Apache-2.0</a> © 2026 SuperMarioYL</sub></p>

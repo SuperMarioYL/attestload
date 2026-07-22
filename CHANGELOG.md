@@ -4,6 +4,49 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-07-23
+
+A trust-model correctness release closing an identity-allowlist bypass on
+sigstore attestations and an allowlist error-reporting gap. Two correctness
+fixes, each grounded in the shipped source and pinned by a revert-verified
+regression test. No attestation format change — existing attestations verify
+unchanged.
+
+### Fixed
+- **`allowed_identities` can no longer be bypassed via the self-declared
+  `cert_identity` on sigstore attestations.** This is the sigstore twin of the
+  v0.6.0 ed25519 fix. For sigstore, `boundSignerIdentity` returned the
+  self-declared `signature.cert_identity` and `evaluatePolicy` matched
+  `allowed_identities` against it — but `cert_identity` lives INSIDE the
+  `signature` block, which is STRIPPED from the signed canonical body
+  (`verify.ts` canonicalizes the manifest minus its signature; `attest.ts` signs
+  exactly that body-without-signature). So `cert_identity` is NOT covered by
+  the Sigstore signature: any holder of a valid keyless sigstore attestation
+  could rewrite `cert_identity` to a value in a consumer's `allowed_identities`;
+  `verifySigstore` still returned true (the bundle validly signs the unchanged
+  body) and the forged identity matched → the gate ALLOWED attacker code as a
+  trusted signer. The signer identity is now derived from the VERIFIED Sigstore
+  bundle's certificate SAN (the OIDC email/URI Fulcio issued the leaf cert for,
+  which `@sigstore/verify` already chains against Fulcio's root), surfaced onto
+  the `VerifyResult` as `verified_signer_identity` by `verify.ts` (read from
+  the `Signer.identity.subjectAlternativeName` that `@sigstore/verify` returns)
+  and consumed by `boundSignerIdentity`. Non-breaking for honest attestations:
+  the bundle's cert SAN equals the email `cert_identity` was set from at signing
+  time, so an allowlist pinning the real identity still passes — only forged
+  values are now refused.
+- **A schema-malformed allowlist now names the file, not only JSON-syntax
+  errors.** `loadAllowlist` wrapped only `SyntaxError` with the target path; a
+  `ZodError` thrown by `AllowlistSchema.parse` — valid JSON but a wrong-shape
+  entry, e.g. an `artifact_digest` that isn't a sha256 — fell through to a bare
+  `throw err` with no filename, and the CLI then labeled it by option name
+  (`--allowlist-file`) rather than the actual path. This contradicted the
+  v0.7.0 changelog's stated goal and was asymmetric with the sibling policy load
+  (`parsePolicyFile` wraps all errors with the filename). Now every non-ENOENT
+  error is wrapped with the target path (`allowlist at <path> failed to load:
+  <msg>`), mirroring `parsePolicyFile`; a missing file still resolves to an
+  empty index. Pinned by both a `checkLoad` rejection and a `verify
+  --allowlist` CLI exit that surface the file path.
+
 ## [0.7.0] - 2026-07-14
 
 A verify-path robustness and configuration-honesty release. Two correctness

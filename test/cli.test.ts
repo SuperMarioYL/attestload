@@ -98,3 +98,63 @@ describe("v0.7.0: verify --allowlist reports a malformed allowlist file", () => 
     }
   });
 });
+
+/**
+ * v0.8.0 — the `verify --allowlist` command names the FILE on a schema-malformed
+ * allowlist (valid JSON, wrong shape), not only on JSON-syntax errors. The
+ * v0.7.0 CLI test pinned only the JSON-syntax case; a ZodError from the
+ * allowlist schema used to surface with no filename (loadAllowlist wrapped only
+ * SyntaxError), so the CLI labeled it by option name. Now every non-ENOENT
+ * error names the file.
+ */
+describe("v0.8.0: verify --allowlist names the file on a schema-malformed allowlist", () => {
+  let tmp: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), "attestload-cli-allow-schema-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it("valid JSON but a wrong-shape entry exits non-zero naming the file (not just JSON syntax)", async () => {
+    const skill = path.join(tmp, "skill");
+    await fs.mkdir(skill, { recursive: true });
+    const bad = path.join(tmp, "bad-schema.json");
+    await fs.writeFile(
+      bad,
+      JSON.stringify({
+        schema: "attestload-allowlist/v1",
+        entries: [{ name: "x", artifact_digest: "not-a-sha256" }],
+      }),
+    );
+
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...a: unknown[]) => {
+        errors.push(a.map(String).join(" "));
+      });
+    const prevExit = process.exitCode;
+    process.exitCode = undefined;
+    try {
+      await buildProgram().parseAsync([
+        "node",
+        "attestload",
+        "verify",
+        skill,
+        "--allowlist",
+        "--allowlist-file",
+        bad,
+      ]);
+      expect(process.exitCode).toBe(1);
+      const joined = errors.join("\n");
+      expect(joined).toMatch(/failed to load allowlist/i);
+      expect(joined).toContain("bad-schema.json");
+    } finally {
+      spy.mockRestore();
+      process.exitCode = prevExit;
+    }
+  });
+});
