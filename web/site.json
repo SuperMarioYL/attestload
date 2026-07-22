@@ -61,8 +61,8 @@
   "cta": {
     "headline": { "zh": "让 agent 加载前先过这一关", "en": "Make your agent pass this gate before it loads anything" },
     "sub": {
-      "zh": "MIT 许可，一行命令装好：冷启动有名单兜底，每次提交自动把关，被改过或没签名的代码加载前一律挡下。",
-      "en": "MIT-licensed, one line to install: the cold start is covered by a verified list, every commit is checked, and anything tampered or unsigned is blocked before load."
+      "zh": "Apache-2.0 许可，一行命令装好：冷启动有名单兜底，每次提交自动把关，被改过或没签名的代码加载前一律挡下。",
+      "en": "Apache-2.0 licensed, one line to install: the cold start is covered by a verified list, every commit is checked, and anything tampered or unsigned is blocked before load."
     },
     "button": { "zh": "在 GitHub 查看", "en": "View on GitHub" }
   },
@@ -71,5 +71,10 @@
       "zh": "Skill 装进 Agent 前的那道关卡",
       "en": "The gate a Skill passes before your agent loads it"
     }
+  },
+  "meta": {
+    "content_version": "v0.8.0",
+    "generated_at": "2026-07-22T22:00:55Z",
+    "web_factory_ref": "v1.1"
   }
 }
