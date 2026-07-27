@@ -13,9 +13,9 @@
  * load-bearing: `verify` exits non-zero on refusal so it can gate CI / hooks.
  */
 
-import { promises as fs, readFileSync } from "node:fs";
+import { promises as fs, readFileSync, realpathSync } from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Command } from "commander";
 
@@ -443,10 +443,31 @@ export async function main(argv: readonly string[] = process.argv): Promise<void
 }
 
 // Run when invoked as the bin (not when imported by a test).
-// `import.meta.url` ends with the actually-executed file path.
-const invokedDirectly =
-  process.argv[1] !== undefined &&
-  import.meta.url === `file://${path.resolve(process.argv[1])}`;
+// Resolve symlinks on BOTH sides so an npm-installed bin (a symlink like
+// `/usr/local/bin/attestload` → `.../dist/cli.js`) still matches: Node resolves
+// `import.meta.url` to the REAL dist/cli.js (following symlinks), but the old
+// check compared it against `file://${path.resolve(process.argv[1])}` — and
+// `path.resolve` does NOT follow symlinks, so the two sides never matched when
+// the bin was invoked through a symlink. `main()` never ran, commander never
+// parsed argv, and `attestload verify <unattested>` silently exited 0 —
+// bypassing the gate. `realpathSync` resolves the invoked path's symlinks so
+// both sides point at the same real file.
+const invokedDirectly = (() => {
+  const invoked = process.argv[1];
+  if (invoked === undefined) return false;
+  try {
+    return (
+      pathToFileURL(realpathSync(invoked)).href ===
+      // `import.meta.url` already points at the real (symlink-resolved) file.
+      import.meta.url
+    );
+  } catch {
+    // If realpathSync fails (e.g. the argv path doesn't exist in this context),
+    // fall back to the unresolved string comparison so import-from-source still
+    // works for `tsx src/cli.ts` and similar dev paths.
+    return import.meta.url === `file://${path.resolve(invoked)}`;
+  }
+})();
 
 if (invokedDirectly) {
   main().catch((err: unknown) => {

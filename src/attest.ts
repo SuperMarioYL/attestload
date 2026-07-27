@@ -223,6 +223,25 @@ async function signEd25519(body: string, keyDir: string): Promise<Signature> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Resolve the OIDC identity token `trySignSigstore` actually signs with: the
+ * explicit `--identity-token` flag, else the standard Sigstore CI env vars
+ * (`SIGSTORE_ID_TOKEN`, then the GitHub Actions `ACTIONS_ID_TOKEN_REQUEST_TOKEN`).
+ * Centralized so `provenance.builder_id` is derived from the SAME source the
+ * sigstore cert identity comes from — otherwise an env-supplied token yields a
+ * `local:<username>` builder_id while the verified cert identity is the email,
+ * which is untruthful provenance the tool must not emit.
+ */
+export function resolveIdentityToken(
+  identityToken: string | undefined,
+): string | undefined {
+  return (
+    identityToken ??
+    process.env["SIGSTORE_ID_TOKEN"] ??
+    process.env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+  );
+}
+
+/**
  * Attempt a keyless Sigstore signature over `body`. Returns `undefined` (rather
  * than throwing) whenever Sigstore is unavailable for ANY reason — package not
  * installed, no OIDC token, no network — so the caller can transparently fall
@@ -236,7 +255,7 @@ export async function trySignSigstore(
   body: string,
   identityToken: string | undefined,
 ): Promise<Signature | undefined> {
-  const token = identityToken ?? process.env["SIGSTORE_ID_TOKEN"] ?? process.env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"];
+  const token = resolveIdentityToken(identityToken);
   if (!token) return undefined; // no OIDC identity → cannot do keyless
 
   try {
@@ -339,9 +358,15 @@ export async function attest(
   const { sbom, strategy } = await deriveSbom(root, kind, files);
 
   // 4. provenance
+  // Derive builder_id from the SAME OIDC token `trySignSigstore` resolves (flag
+  // OR env), so provenance.builder_id matches the sigstore cert identity
+  // regardless of how the token arrived. Falls back to `local:<username>` only
+  // when NO token is reachable at all (so a real local/ed25519 attestation still
+  // honestly reports a local builder).
+  const resolvedToken = resolveIdentityToken(options.identityToken);
   const builderId =
-    options.identityToken !== undefined
-      ? extractIdentity(options.identityToken)
+    resolvedToken !== undefined
+      ? extractIdentity(resolvedToken)
       : `local:${os.userInfo().username}`;
   const provenance = await captureProvenance(root, builderId);
 
