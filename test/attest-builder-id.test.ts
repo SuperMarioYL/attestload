@@ -60,9 +60,13 @@ describe("v0.9.0: resolveIdentityToken mirrors trySignSigstore's token resolutio
     expect(resolveIdentityToken(undefined)).toBe("sigstore-env-token");
   });
 
-  it("falls back to ACTIONS_ID_TOKEN_REQUEST_TOKEN when no flag and no SIGSTORE_ID_TOKEN", () => {
+  it("does NOT fall back to ACTIONS_ID_TOKEN_REQUEST_TOKEN — it is a request token, not a JWT identity (v0.10 fix)", () => {
+    // v0.10.0 regression for fix-sigstore-actions-request-token-builder-id-unknown:
+    // ACTIONS_ID_TOKEN_REQUEST_TOKEN is a bearer REQUEST token for the OIDC
+    // fetch URL, NOT a JWT identity token, so it must no longer be returned
+    // here. The old code returned it, which fed "unknown" into builder_id.
     process.env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = "actions-env-token";
-    expect(resolveIdentityToken(undefined)).toBe("actions-env-token");
+    expect(resolveIdentityToken(undefined)).toBeUndefined();
   });
 
   it("returns undefined when no token is reachable at all (local fallback path)", () => {
@@ -101,5 +105,75 @@ describe("v0.9.0: attest() derives provenance.builder_id from the env-supplied O
     // Regression guard: the old code gated on options.identityToken only, so
     // with no flag it emitted `local:<username>`.
     expect(result.manifest.provenance.builder_id).not.toMatch(/^local:/);
+  });
+});
+
+/**
+ * v0.10.0 regression — `fix-sigstore-actions-request-token-builder-id-unknown`
+ * (a v0.9 regression of v0.8 honesty).
+ *
+ * `resolveIdentityToken` (src/attest.ts) fell back to
+ * `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, but that GitHub Actions env var is a bearer
+ * REQUEST token used to hit `ACTIONS_ID_TOKEN_REQUEST_URL` to FETCH the OIDC
+ * JWT — it is NOT itself a JWT. In a standard CI job (`id-token: write`, no
+ * `SIGSTORE_ID_TOKEN`), the old code returned it, so
+ * `builderId = extractIdentity(requestToken) = "unknown"` (a request token is
+ * not a dotted JWT, so `token.split(".")[1]` is undefined → "unknown"),
+ * while `trySignSigstore` failed and silently degraded to ed25519.
+ * `provenance.builder_id` therefore read `"unknown"` for an attestation
+ * actually built by a local ed25519 key — untruthful provenance, and a
+ * regression from v0.8 (which emitted the honest `local:<username>` before the
+ * v0.9 fix wired `resolveIdentityToken` into builder_id).
+ *
+ * The fix drops `ACTIONS_ID_TOKEN_REQUEST_TOKEN` from `resolveIdentityToken`'s
+ * fallback chain. With no real JWT (`SIGSTORE_ID_TOKEN` or `--identity-token`)
+ * reachable, builder_id honestly falls back to `local:<username>` and sigstore
+ * cleanly degrades to ed25519, restoring v0.8 honesty WITHOUT touching the
+ * `SIGSTORE_ID_TOKEN` alignment the v0.9 fix added (that path still yields the
+ * email). The regression drives `attest()` with ONLY the request token set and
+ * asserts `builder_id` is the honest `local:<username>`, not `"unknown"`.
+ */
+describe("v0.10.0: attest() emits an honest local builder_id when only the GH Actions request token is set (not 'unknown')", () => {
+  let workspace: string;
+  let skillDir: string;
+  let keyDir: string;
+  const prevSigstore = process.env["SIGSTORE_ID_TOKEN"];
+  const prevActions = process.env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"];
+
+  beforeEach(async () => {
+    workspace = await fs.mkdtemp(
+      path.join(os.tmpdir(), "attestload-builderid-v10-"),
+    );
+    skillDir = path.join(workspace, "skill");
+    keyDir = path.join(workspace, "keys");
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "# fixture\n");
+    // Standard CI job shape: `id-token: write`, no SIGSTORE_ID_TOKEN. The only
+    // token-shaped env var present is the GH Actions REQUEST token (a non-JWT).
+    delete process.env["SIGSTORE_ID_TOKEN"];
+    process.env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = "gh-actions-request-token";
+  });
+
+  afterEach(async () => {
+    if (prevSigstore === undefined) delete process.env["SIGSTORE_ID_TOKEN"];
+    else process.env["SIGSTORE_ID_TOKEN"] = prevSigstore;
+    if (prevActions === undefined)
+      delete process.env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"];
+    else process.env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = prevActions;
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
+  it("builder_id is the honest local:<username>, not the request token's 'unknown'", async () => {
+    // Force ed25519 so no network/OIDC is touched; the provenance-derivation
+    // path runs before the signing-mode branch, so builder_id is still derived
+    // from the resolved token (here: none — the request token is no longer a
+    // fallback), landing the honest local identity.
+    const result = await attest(skillDir, { signingMode: "ed25519", keyDir });
+    expect(result.manifest.provenance.builder_id).toBe(
+      `local:${os.userInfo().username}`,
+    );
+    // Regression guard: the v0.9 wiring returned the request token, which
+    // extractIdentity read as "unknown".
+    expect(result.manifest.provenance.builder_id).not.toBe("unknown");
   });
 });

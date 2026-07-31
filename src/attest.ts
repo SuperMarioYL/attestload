@@ -224,21 +224,27 @@ async function signEd25519(body: string, keyDir: string): Promise<Signature> {
 
 /**
  * Resolve the OIDC identity token `trySignSigstore` actually signs with: the
- * explicit `--identity-token` flag, else the standard Sigstore CI env vars
- * (`SIGSTORE_ID_TOKEN`, then the GitHub Actions `ACTIONS_ID_TOKEN_REQUEST_TOKEN`).
- * Centralized so `provenance.builder_id` is derived from the SAME source the
- * sigstore cert identity comes from — otherwise an env-supplied token yields a
+ * explicit `--identity-token` flag, else the standard Sigstore CI env var
+ * `SIGSTORE_ID_TOKEN` (a real Fulcio-acceptable JWT). Centralized so
+ * `provenance.builder_id` is derived from the SAME source the sigstore cert
+ * identity comes from — otherwise an env-supplied token yields a
  * `local:<username>` builder_id while the verified cert identity is the email,
  * which is untruthful provenance the tool must not emit.
+ *
+ * GitHub Actions' `ACTIONS_ID_TOKEN_REQUEST_TOKEN` is deliberately NOT a
+ * fallback here: it is a bearer REQUEST token used to hit
+ * `ACTIONS_ID_TOKEN_REQUEST_URL` to FETCH the OIDC JWT — it is not itself a JWT
+ * identity token, so feeding it to `extractIdentity` returns `"unknown"` and to
+ * Fulcio it rejects. With no real JWT reachable, builder_id honestly falls back
+ * to `local:<username>` and sigstore cleanly degrades to ed25519 (restoring the
+ * v0.8 honesty the v0.9 wiring inadvertently broke). Fetching the OIDC JWT via
+ * `ACTIONS_ID_TOKEN_REQUEST_URL` for real CI sigstore signing is a separate,
+ * network-bearing feature, out of scope for this honesty fix.
  */
 export function resolveIdentityToken(
   identityToken: string | undefined,
 ): string | undefined {
-  return (
-    identityToken ??
-    process.env["SIGSTORE_ID_TOKEN"] ??
-    process.env["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
-  );
+  return identityToken ?? process.env["SIGSTORE_ID_TOKEN"];
 }
 
 /**
