@@ -12,8 +12,8 @@
       "en": "Before your agent loads a Skill\nmake sure nobody tampered with it"
     },
     "sub": {
-      "zh": "你的 Coding Agent 会按 star 数自动安装 Skill 和 MCP server，但没人真读过那些代码。attestload 在加载前核对每一份产物是不是它声称的那个：被篡改或没签名，一律拒绝运行。",
-      "en": "Your coding agent auto-installs Skills and MCP servers by star count, but nobody reads that code. attestload checks every artifact before it loads — is it really what it claims to be? If it's been tampered or isn't signed, it gets refused."
+      "zh": "你的 Coding Agent 会按 star 数自动安装 Skill 和 MCP server，但没人真读过那些代码。attestload 在加载前核对每一份产物是不是它声称的那个——签名经一次浏览器点击的无密钥流程写进公开透明日志，被篡改或没签名的一律拒绝运行。",
+      "en": "Your coding agent auto-installs Skills and MCP servers by star count, and nobody reads that code. attestload checks every artifact before it loads — is it really what it claims to be? Signatures are made with a one-click keyless flow recorded in a public transparency log; anything tampered or unsigned gets refused."
     },
     "command": "attestload verify ./downloaded-skill",
     "cta": { "zh": "开始使用", "en": "Get started" },
@@ -30,20 +30,20 @@
       "chips": ["› 不再靠 star 数赌信任", "› 谁建的 · 哪个版本 · 有没有被改"]
     },
     {
+      "title": { "zh": "签名不用管密钥 — 一次点击进公开账本", "en": "Sign with one click — no keys to manage, recorded in a public log" },
+      "body": {
+        "zh": "给 Skill 签名本来意味着生成、保管、轮换私钥——一件没人愿意做的苦差，所以绝大多数 Skill 干脆不签。attestload 接的是无密钥的 Sigstore 签名：用 GitHub 或 Google 账号在浏览器点一次，签名连同签名人身份一起写进公开的 Rekor 透明日志，谁都能独立查证。没有私钥会泄露，也不用“信我”——记录本身是公开的。",
+        "en": "Signing a Skill used to mean generating, guarding, and rotating a private key — a chore nobody does, so most Skills just stay unsigned. attestload wires in keyless Sigstore signing: one browser click with your GitHub or Google account, and the signature plus the signer's identity both land in the public Rekor transparency log anyone can independently audit. No private key to leak, and no \"trust me\" — the record itself is public."
+      },
+      "chips": ["› 一次浏览器点击签名", "› 进公开 Rekor 透明日志 · 谁都能查"]
+    },
+    {
       "title": { "zh": "签名后塞进去的文件，加载前就抓到", "en": "A file slipped in after signing gets caught before load" },
       "body": {
         "zh": "有人在一个看起来靠谱的 Skill 里偷偷多塞一个文件、改一行代码，光看目录看不出来。attestload 加载前把整份内容重新核对一遍：多一个文件、少一个字节都对不上，直接拒绝运行。",
         "en": "Someone slips an extra file or changes one line inside a Skill that looks legit — invisible to the eye. attestload re-checks the whole thing before load: one extra file or one changed byte won't match, and it gets refused."
       },
       "chips": ["› 多一个文件就拒", "› 改一个字节也跑不动"]
-    },
-    {
-      "title": { "zh": "还没签名的，先靠一份已验过的名单兜底", "en": "What isn't signed yet is covered by a pre-verified list" },
-      "body": {
-        "zh": "让全世界每个 Skill 都先签名要时间。在那之前，attestload 带一份已验过的热门 Skill 名单当兜底，命中就放行；你也能钉死自己信任的版本，别的版本一律拒。",
-        "en": "Getting every Skill on earth signed first takes time. Until then, attestload ships with a pre-verified list of popular Skills as a floor — hit it and it passes; you can also pin the exact version you trust and refuse anything else."
-      },
-      "chips": ["› 热门 Skill 名单兜底", "› 钉死你信任的版本"]
     },
     {
       "title": { "zh": "每次提交前自动把关，不用记得去查", "en": "Checked on every commit — you don't have to remember" },
@@ -61,8 +61,8 @@
   "cta": {
     "headline": { "zh": "让 agent 加载前先过这一关", "en": "Make your agent pass this gate before it loads anything" },
     "sub": {
-      "zh": "Apache-2.0 许可，一行命令装好：冷启动有名单兜底，每次提交自动把关，被改过或没签名的代码加载前一律挡下。",
-      "en": "Apache-2.0 licensed, one line to install: the cold start is covered by a verified list, every commit is checked, and anything tampered or unsigned is blocked before load."
+      "zh": "Apache-2.0 许可，一行命令装好：签名一次点击进公开透明日志，冷启动有名单兜底，每次提交自动把关，被改过或没签名的代码加载前一律挡下。",
+      "en": "Apache-2.0 licensed, one line to install: signatures are one click into a public transparency log, the cold start is covered by a verified list, every commit is checked, and anything tampered or unsigned is blocked before load."
     },
     "button": { "zh": "在 GitHub 查看", "en": "View on GitHub" }
   },
@@ -73,8 +73,8 @@
     }
   },
   "meta": {
-    "content_version": "v0.10.0",
-    "generated_at": "2026-08-05T18:20:00Z",
+    "content_version": "v0.11.0",
+    "generated_at": "2026-08-06T05:00:00Z",
     "web_factory_ref": "v1.1"
   }
 }
