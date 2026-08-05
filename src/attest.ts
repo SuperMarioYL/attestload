@@ -266,13 +266,17 @@ export async function trySignSigstore(
 
   try {
     // Dynamic + untyped: the package may be absent during type-check/offline.
+    // @sigstore/sign@3.x exports `BundleBuilder` only as a TypeScript *type*
+    // (erased at runtime); the concrete runtime classes are `DSSEBundleBuilder`
+    // and `MessageSignatureBundleBuilder`. We use the latter — it signs a raw
+    // message body (the canonical manifest JSON), which is exactly our shape.
     const mod = (await import("@sigstore/sign")) as unknown as {
       DEFAULT_REKOR_URL?: string;
       DEFAULT_FULCIO_URL?: string;
       FulcioSigner: new (o: unknown) => unknown;
       RekorWitness: new (o: unknown) => unknown;
       CIContextProvider?: new () => unknown;
-      BundleBuilder: new (o: unknown) => {
+      MessageSignatureBundleBuilder: new (o: unknown) => {
         create(o: { data: Buffer }): Promise<{
           toJSON?: () => unknown;
           verificationMaterial?: {
@@ -288,7 +292,7 @@ export async function trySignSigstore(
     const identityProvider = { getToken: async () => token };
     const signer = new mod.FulcioSigner({ fulcioBaseURL: fulcioURL, identityProvider });
     const witness = new mod.RekorWitness({ rekorBaseURL: rekorURL });
-    const builder = new mod.BundleBuilder({ signer, witnesses: [witness] });
+    const builder = new mod.MessageSignatureBundleBuilder({ signer, witnesses: [witness] });
 
     const bundle = await builder.create({ data: Buffer.from(body, "utf8") });
     const serialized = bundle.toJSON ? bundle.toJSON() : bundle;
