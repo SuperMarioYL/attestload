@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -30,3 +32,29 @@ jobs:
             exit 1
           fi
           echo "OK: no hardcoded static release badge in READMEs."
+      - name: Version-files drift guard
+        run: |
+          # package.json and VERSION are two version sources; they must never
+          # drift apart. The publish flow tags from the --version flag, so if
+          # the files aren't bumped to match, `attestload --version` lies about
+          # the shipped release (it read 0.10.0 on a v0.11.0 release).
+          PKG="$(node -p "require('./package.json').version")"
+          VER="$(tr -d ' \n' < VERSION 2>/dev/null)"
+          if [ "$PKG" != "$VER" ]; then
+            echo "ERROR: package.json version ($PKG) != VERSION file ($VER)."
+            echo "Bump both version sources together so they track the release tag."
+            exit 1
+          fi
+          # Best-effort tag-sync: the latest tag should match package.json too.
+          # Skips gracefully when no tag is reachable on a shallow CI clone; the
+          # file-vs-file check above is the robust primary guard.
+          LATEST="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [ -n "$LATEST" ]; then
+            TAG="${LATEST#v}"
+            if [ "$PKG" != "$TAG" ]; then
+              echo "ERROR: package.json version ($PKG) != latest tag ($LATEST)."
+              echo "Bump the version files before tagging the release."
+              exit 1
+            fi
+          fi
+          echo "OK: version files agree ($PKG)."

@@ -110,8 +110,12 @@ function parsePackageLock(raw: string): SbomPackage[] {
   if (json.packages) {
     for (const [key, meta] of Object.entries(json.packages)) {
       if (key === "") continue; // the root project itself
-      const name = key.startsWith("node_modules/")
-        ? key.slice("node_modules/".length)
+      // npm v3 nests transitive dependencies under
+      // `node_modules/<parent>/node_modules/<child>`; take the segment after the
+      // LAST `node_modules/` so the SBOM names the bare child package, not the
+      // path-qualified `lodash/node_modules/foo`.
+      const name = key.includes("node_modules/")
+        ? key.slice(key.lastIndexOf("node_modules/") + "node_modules/".length)
         : key;
       out.push({
         name,
@@ -285,14 +289,21 @@ function parseRequirements(raw: string): SbomPackage[] {
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("-")) continue;
-    const m = /^([A-Za-z0-9._-]+)\s*([=<>!~]=?)?\s*([^;#\s]+)?/.exec(trimmed);
+    // PEP 508: a requirement is `name[extras] <op> version[, <op> version]... [; markers]`.
+    // Strip environment markers (`; ...`) first, then consume optional `[extras]`
+    // between the name and the operator, and stop the version at a comma so a
+    // compound specifier (`>=3.2,<4.0`) yields the first pinned version, not the
+    // whole `3.2,<4.0` string. Without this, `requests[security]==2.31.0` leaked
+    // `[security]==2.31.0` into the version field — an inaccurate bill-of-materials.
+    const noMarkers = (trimmed.split(";")[0] ?? "").trim();
+    const m = /^([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*([=<>!~]=?)?\s*([^,;#\s]+)/.exec(noMarkers);
     if (!m || !m[1]) continue;
     out.push({
       name: m[1],
-      version: m[3] ?? "",
+      version: m[4] ?? "",
       license: "",
       // requirements.txt carries no content digest; address the declaration.
-      digest: sha256Hex(`${m[1]}@${m[3] ?? ""}`),
+      digest: sha256Hex(`${m[1]}@${m[4] ?? ""}`),
     });
   }
   return out;

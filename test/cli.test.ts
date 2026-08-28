@@ -48,6 +48,26 @@ describe("cli version", () => {
 });
 
 /**
+ * v0.12.0 — the VERSION file and package.json must agree (and track the release
+ * tag). The publish flow tags from the --version flag but never bumps the files,
+ * so package.json/VERSION drifted to 0.10.0/0.8.0 on a v0.11.0 release and
+ * `attestload --version` lied about the shipped version. The file-vs-file guard
+ * is the git-free minimum that catches the dual-source disagreement so the two
+ * version sources can never silently drift apart again.
+ */
+describe("v0.12.0: VERSION file and package.json agree", () => {
+  it("the VERSION file content equals the package.json version", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(
+      readFileSync(path.join(here, "..", "package.json"), "utf8"),
+    ) as { version?: string };
+    const versionFile = readFileSync(path.join(here, "..", "VERSION"), "utf8").trim();
+    expect(pkg.version).toBeDefined();
+    expect(versionFile).toBe(pkg.version);
+  });
+});
+
+/**
  * v0.7.0 — the `verify --allowlist` command fails loudly on a malformed
  * allowlist file rather than silently degrading to "no allowlist" and refusing
  * a cold-start skill with a misleading reason. Drives the real CLI action so the

@@ -17,7 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { buildFileManifest } from "../src/manifest.js";
-import { deriveSbom, detectSbomStrategy } from "../src/sbom.js";
+import { deriveSbom, detectSbomStrategy, sbomFromLockfile } from "../src/sbom.js";
 
 let tmp: string;
 
@@ -123,5 +123,81 @@ describe("yarn.lock SBOM derivation", () => {
     expect(sbom.source).toBe("lockfile");
     expect(sbom.packages.some((p) => p.name === "server.js")).toBe(false);
     expect(sbom.packages.some((p) => p.name === "lodash")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.12.0 fix — parseRequirements strips PEP 508 extras and stops the version
+// at compound-specifier commas (no more "[security]==2.31.0" as a version).
+// ---------------------------------------------------------------------------
+describe("v0.12.0: requirements.txt SBOM strips extras + compound specifiers", () => {
+  it("extras (name[extra]==version) do not leak into the version field", async () => {
+    await fs.writeFile(
+      path.join(tmp, "requirements.txt"),
+      'requests[security]==2.31.0\nbcrypt>=3.2,<4.0; python_version >= "3.8"\nclick\n',
+    );
+    const sbom = await sbomFromLockfile(tmp, "requirements.txt");
+    const req = sbom.packages.find((p) => p.name === "requests");
+    expect(req).toBeDefined();
+    expect(req!.version).toBe("2.31.0");
+    expect(req!.version).not.toContain("[security]");
+    expect(req!.version).not.toContain("==");
+  });
+
+  it("a compound specifier (>=3.2,<4.0) yields the first pinned version only", async () => {
+    await fs.writeFile(
+      path.join(tmp, "requirements.txt"),
+      'bcrypt>=3.2,<4.0; python_version >= "3.8"\n',
+    );
+    const sbom = await sbomFromLockfile(tmp, "requirements.txt");
+    const bc = sbom.packages.find((p) => p.name === "bcrypt");
+    expect(bc).toBeDefined();
+    expect(bc!.version).toBe("3.2");
+    expect(bc!.version).not.toContain(",");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.12.0 fix — parsePackageLock names a nested transitive dep by its bare
+// child name (foo), not the path-qualified "lodash/node_modules/foo".
+// ---------------------------------------------------------------------------
+describe("v0.12.0: package-lock.json nested package name", () => {
+  it("a nested transitive (node_modules/a/node_modules/b) is named 'b'", async () => {
+    const pkgLock = JSON.stringify(
+      {
+        name: "demo",
+        version: "1.0.0",
+        lockfileVersion: 3,
+        packages: {
+          "": { name: "demo", version: "1.0.0" },
+          "node_modules/lodash": {
+            version: "4.17.21",
+            license: "MIT",
+            integrity: "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvKw==",
+          },
+          "node_modules/lodash/node_modules/foo": {
+            version: "1.2.3",
+            integrity: "sha512-aaa==",
+          },
+          "node_modules/@babel/code-frame": {
+            version: "7.0.0",
+            license: "MIT",
+            integrity: "sha512-HV1Cm0Q3ZrpCR93tkWOYiuYIgLxZXZFVG2VgK+MBWjUqZTundupPCB5/g==",
+          },
+        },
+      },
+      null,
+      2,
+    );
+    await fs.writeFile(path.join(tmp, "package-lock.json"), pkgLock);
+    const sbom = await sbomFromLockfile(tmp, "package-lock.json");
+    const foo = sbom.packages.find((p) => p.name === "foo");
+    expect(foo).toBeDefined();
+    expect(foo!.version).toBe("1.2.3");
+    // No package carries a path-qualified node_modules/ name.
+    expect(sbom.packages.some((p) => p.name.includes("node_modules/"))).toBe(false);
+    // Top-level + scoped deps are still named correctly.
+    expect(sbom.packages.some((p) => p.name === "lodash")).toBe(true);
+    expect(sbom.packages.some((p) => p.name === "@babel/code-frame")).toBe(true);
   });
 });
