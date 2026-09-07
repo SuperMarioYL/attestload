@@ -146,8 +146,12 @@ function parsePnpmLock(raw: string): SbomPackage[] {
   if (!doc.packages) return out;
 
   for (const [key, meta] of Object.entries(doc.packages)) {
-    // keys look like "/lodash@4.17.21" or "lodash@4.17.21"
-    const trimmed = key.startsWith("/") ? key.slice(1) : key;
+    // keys look like "/lodash@4.17.21" or "lodash@4.17.21", optionally with
+    // parenthesized peer-dep suffixes pnpm v9 appends for resolved peers,
+    // e.g. "/foo@1.0.0(bar@2.0.0)". Strip those trailing (...) groups BEFORE
+    // splitting on `@`, otherwise lastIndexOf("@") finds the @ inside a peer
+    // suffix and mangles both name (foo@1.0.0(bar) and version (2.0.0)).
+    const trimmed = (key.startsWith("/") ? key.slice(1) : key).replace(/(\([^)]*\))+$/, "");
     const at = trimmed.lastIndexOf("@");
     const name = at > 0 ? trimmed.slice(0, at) : trimmed;
     const version = at > 0 ? trimmed.slice(at + 1) : "";
@@ -295,8 +299,13 @@ function parseRequirements(raw: string): SbomPackage[] {
     // compound specifier (`>=3.2,<4.0`) yields the first pinned version, not the
     // whole `3.2,<4.0` string. Without this, `requests[security]==2.31.0` leaked
     // `[security]==2.31.0` into the version field — an inaccurate bill-of-materials.
+    // The version group is OPTIONAL: an UNPINNED requirement (`requests` with no
+    // operator) must still yield the full name with an empty version. When it was
+    // mandatory, its character class ([^,;#\s]+) overlapped the name class
+    // ([A-Za-z0-9._-]+), forcing the regex to backtrack the greedy name and steal
+    // its last char as a fake "version" (`requests` -> name "request" version "s").
     const noMarkers = (trimmed.split(";")[0] ?? "").trim();
-    const m = /^([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*([=<>!~]=?)?\s*([^,;#\s]+)/.exec(noMarkers);
+    const m = /^([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*([=<>!~]=?)?\s*([^,;#\s]+)?/.exec(noMarkers);
     if (!m || !m[1]) continue;
     out.push({
       name: m[1],

@@ -58,3 +58,25 @@ jobs:
             fi
           fi
           echo "OK: version files agree ($PKG)."
+      - name: Site content-version drift guard
+        run: |
+          # web/site.json meta.content_version is the version surface the live
+          # Pages site advertises. It shipped v0.11.0 on a v0.12.0 release
+          # (the publish flow bumped package.json/VERSION but not the site),
+          # the same truthful-reporting drift the guards above close for the
+          # other surfaces. Assert it (minus the leading v) equals package.json
+          # so a future release that tags without bumping the site version
+          # fails CI.
+          PKG="$(node -p "require('./package.json').version")"
+          SITE="$(node -p "require('./web/site.json').meta.content_version" 2>/dev/null || true)"
+          if [ -z "$SITE" ]; then
+            echo "WARN: web/site.json meta.content_version not found; skipping."
+          else
+            SITE_NUM="${SITE#v}"
+            if [ "$PKG" != "$SITE_NUM" ]; then
+              echo "ERROR: web/site.json meta.content_version ($SITE) != package.json version ($PKG)."
+              echo "Bump web/site.json meta.content_version before tagging the release."
+              exit 1
+            fi
+            echo "OK: site content_version agrees ($SITE)."
+          fi

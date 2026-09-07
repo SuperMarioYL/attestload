@@ -201,3 +201,92 @@ describe("v0.12.0: package-lock.json nested package name", () => {
     expect(sbom.packages.some((p) => p.name === "@babel/code-frame")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v0.13.0 fix — parseRequirements no longer mangles UNPINNED requirements
+// (requests -> name "request" version "s"). The version capture group was
+// mandatory and its char class overlapped the name class, forcing the regex
+// to backtrack the greedy name and steal its last char as a fake "version".
+// ---------------------------------------------------------------------------
+describe("v0.13.0: requirements.txt SBOM keeps unpinned names intact", () => {
+  it("an unpinned requirement (no operator/version) keeps its full name + empty version", async () => {
+    await fs.writeFile(
+      path.join(tmp, "requirements.txt"),
+      "requests\nclick\nnumpy\n",
+    );
+    const sbom = await sbomFromLockfile(tmp, "requirements.txt");
+    const req = sbom.packages.find((p) => p.name === "requests");
+    expect(req).toBeDefined();
+    expect(req!.version).toBe("");
+    const click = sbom.packages.find((p) => p.name === "click");
+    expect(click).toBeDefined();
+    expect(click!.version).toBe("");
+    const numpy = sbom.packages.find((p) => p.name === "numpy");
+    expect(numpy).toBeDefined();
+    expect(numpy!.version).toBe("");
+    // No package carries a name with a missing trailing char or a bogus version.
+    expect(sbom.packages.some((p) => p.name === "request")).toBe(false);
+    expect(sbom.packages.some((p) => p.version === "s" || p.version === "k" || p.version === "y")).toBe(false);
+  });
+
+  it("pinned + extras + compound-specifier shapes still parse correctly (no regression)", async () => {
+    await fs.writeFile(
+      path.join(tmp, "requirements.txt"),
+      'requests[security]==2.31.0\nbcrypt>=3.2,<4.0; python_version >= "3.8"\nflask==2.3.0\n',
+    );
+    const sbom = await sbomFromLockfile(tmp, "requirements.txt");
+    const req = sbom.packages.find((p) => p.name === "requests");
+    expect(req!.version).toBe("2.31.0");
+    const bc = sbom.packages.find((p) => p.name === "bcrypt");
+    expect(bc!.version).toBe("3.2");
+    const flask = sbom.packages.find((p) => p.name === "flask");
+    expect(flask!.version).toBe("2.3.0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v0.13.0 fix — parsePnpmLock strips parenthesized peer-dep suffixes so a key
+// like /foo@1.0.0(bar@2.0.0) is named 'foo' not 'foo@1.0.0(bar'. pnpm v9
+// appends (peer@version) groups to a package key when the package has resolved
+// peers; lastIndexOf("@") found the @ inside a peer suffix and mangled both.
+// ---------------------------------------------------------------------------
+describe("v0.13.0: pnpm-lock.yaml peer-suffixed keys parse to the bare name", () => {
+  it("a single peer-suffixed key (/foo@1.0.0(bar@2.0.0)) yields name 'foo' version '1.0.0'", async () => {
+    const content = `lockfileVersion: '9.0'
+
+packages:
+
+  /lodash@4.17.21:
+    resolution: {integrity: sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvKw==}
+
+  /foo@1.0.0(bar@2.0.0):
+    resolution: {integrity: sha512-aaa==}
+`;
+    await fs.writeFile(path.join(tmp, "pnpm-lock.yaml"), content);
+    const sbom = await sbomFromLockfile(tmp, "pnpm-lock.yaml");
+    const foo = sbom.packages.find((p) => p.name === "foo");
+    expect(foo).toBeDefined();
+    expect(foo!.version).toBe("1.0.0");
+    // No package carries a peer-suffix-mangled name.
+    expect(sbom.packages.some((p) => p.name.includes("("))).toBe(false);
+    expect(sbom.packages.some((p) => p.name === "foo@1.0.0(bar")).toBe(false);
+    // A peer-free key is unchanged.
+    const lodash = sbom.packages.find((p) => p.name === "lodash");
+    expect(lodash!.version).toBe("4.17.21");
+  });
+
+  it("a scoped name with multiple peer suffixes (@babel/core@7.29.7(@babel/plugin@7.0.0)(ms@2.1.3)) survives intact", async () => {
+    const content = `lockfileVersion: '9.0'
+
+packages:
+
+  /@babel/core@7.29.7(@babel/plugin@7.0.0)(ms@2.1.3):
+    resolution: {integrity: sha512-bbb==}
+`;
+    await fs.writeFile(path.join(tmp, "pnpm-lock.yaml"), content);
+    const sbom = await sbomFromLockfile(tmp, "pnpm-lock.yaml");
+    const core = sbom.packages.find((p) => p.name === "@babel/core");
+    expect(core).toBeDefined();
+    expect(core!.version).toBe("7.29.7");
+  });
+});

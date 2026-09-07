@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-09-08
+
+An SBOM-accuracy + version-truthfulness release. Three correctness fixes, each
+grounded in the shipped source and pinned by a regression test. No attestation
+format change — existing attestations verify unchanged.
+
+### Fixed
+- **`parseRequirements` no longer mangles unpinned `requirements.txt`
+  dependencies.** The version capture group was mandatory and its character
+  class overlapped the name group, so the regex backtracked the greedy name and
+  stole its last character as a fake "version" (`requests` → name `request`,
+  version `s`). An unpinned requirement now keeps its full name with an empty
+  version, consistent with the other lockfile parsers.
+- **`parsePnpmLock` strips parenthesized peer-dependency suffixes from
+  `pnpm-lock.yaml` package keys.** pnpm v9 appends `(peer@version)` groups to
+  a key for packages with resolved peers (e.g. `/foo@1.0.0(bar@2.0.0)`); the
+  old `lastIndexOf("@")` found the `@` inside a peer suffix and mangled both
+  name and version. Peer-suffixed keys now parse to the bare name + real
+  version.
+- **`web/site.json` `meta.content_version` is synced to the release and pinned
+  in CI.** It shipped `v0.11.0` on a `v0.12.0` release; the new
+  `Site content-version drift guard` in `ci.yml` asserts it matches
+  `package.json`, the site twin of the `Version-files drift guard`.
+
 ## [0.8.0] - 2026-07-23
 
 A trust-model correctness release closing an identity-allowlist bypass on
