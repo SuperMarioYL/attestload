@@ -1,80 +1,215 @@
 {
-  "schema": 1,
-  "name": "attestload",
+  "schema": 3,
+  "name": "AttestLoad",
   "github": "https://github.com/SuperMarioYL/attestload",
   "host": "attestload.lei6393.com",
-  "lang": { "primary": "zh", "toggle": true },
-  "accent": ["#1f9d6b", "#0e7a52", "#0a5c3f"],
+  "palette": "auto",
+  "lang": {
+    "primary": "en",
+    "toggle": true
+  },
+  "meta": {
+    "visual_style": "neon-particle",
+    "demo_source": "docs/demo-results.json"
+  },
   "hero": {
-    "eyebrow": { "zh": "Skill 装前先验真 · 被改过就拒", "en": "Verify a Skill before it loads · refuse what's been touched" },
     "headline": {
-      "zh": "Agent 装 Skill 前\n先确认它没被偷偷改过",
-      "en": "Before your agent loads a Skill\nmake sure nobody tampered with it"
+      "en": "Check what you are about to load",
+      "zh": "加载前，核对代码与签名"
     },
     "sub": {
-      "zh": "你的 Coding Agent 会按 star 数自动安装 Skill 和 MCP server，但没人真读过那些代码。attestload 在加载前核对每一份产物是不是它声称的那个——签名经一次浏览器点击的无密钥流程写进公开透明日志，被篡改或没签名的一律拒绝运行。",
-      "en": "Your coding agent auto-installs Skills and MCP servers by star count, and nobody reads that code. attestload checks every artifact before it loads — is it really what it claims to be? Signatures are made with a one-click keyless flow recorded in a public transparency log; anything tampered or unsigned gets refused."
+      "en": "AttestLoad signs a directory manifest and verifies the files before your loader proceeds. Use its CLI in CI or call guardLoad from an application that owns the loading step.",
+      "zh": "AttestLoad 为目录清单签名，并在加载前核对文件。可在 CI 中运行 CLI，也可由掌握加载入口的应用调用 guardLoad。"
     },
-    "command": "attestload verify ./downloaded-skill",
-    "cta": { "zh": "开始使用", "en": "Get started" },
-    "ctaGithub": { "zh": "在 GitHub 查看", "en": "View on GitHub" },
-    "scroll": { "zh": "向下滚动", "en": "Scroll" }
+    "href": "#quickstart"
   },
   "advantages": [
     {
-      "title": { "zh": "信任从 star 数变成事实", "en": "Trust stops being a star count" },
-      "body": {
-        "zh": "挑 Skill 的依据基本只有 star 数，而自主 agent 会跳过人工审阅直接自动安装——这正是供应链攻击的入口。attestload 把每一份产物的信任换成一次密码学核对：是谁建的、从哪个版本来、加载前有没有被改过，一次说清。",
-        "en": "Picking a Skill comes down to star count, and your agent auto-installs it without anyone reading the code — the perfect entry for a supply-chain attack. attestload turns that trust into a single cryptographic check: who built it, which version it came from, and whether it's been touched before load."
+      "title": {
+        "en": "Content checks",
+        "zh": "内容校验"
       },
-      "chips": ["› 不再靠 star 数赌信任", "› 谁建的 · 哪个版本 · 有没有被改"]
+      "body": {
+        "en": "Rebuild file digests, executable modes and symlink metadata before verification.",
+        "zh": "验证时重新检查文件摘要、可执行权限和符号链接元数据。"
+      }
     },
     {
-      "title": { "zh": "签名不用管密钥 — 一次点击进公开账本", "en": "Sign with one click — no keys to manage, recorded in a public log" },
-      "body": {
-        "zh": "给 Skill 签名本来意味着生成、保管、轮换私钥——一件没人愿意做的苦差，所以绝大多数 Skill 干脆不签。attestload 接的是无密钥的 Sigstore 签名：用 GitHub 或 Google 账号在浏览器点一次，签名连同签名人身份一起写进公开的 Rekor 透明日志，谁都能独立查证。没有私钥会泄露，也不用“信我”——记录本身是公开的。",
-        "en": "Signing a Skill used to mean generating, guarding, and rotating a private key — a chore nobody does, so most Skills just stay unsigned. attestload wires in keyless Sigstore signing: one browser click with your GitHub or Google account, and the signature plus the signer's identity both land in the public Rekor transparency log anyone can independently audit. No private key to leak, and no \"trust me\" — the record itself is public."
+      "title": {
+        "en": "Explicit signing mode",
+        "zh": "明确签名模式"
       },
-      "chips": ["› 一次浏览器点击签名", "› 进公开 Rekor 透明日志 · 谁都能查"]
+      "body": {
+        "en": "Local Ed25519 and network-backed Sigstore signatures are separately identified.",
+        "zh": "本地 Ed25519 与需要联网的 Sigstore 签名明确区分。"
+      }
     },
     {
-      "title": { "zh": "签名后塞进去的文件，加载前就抓到", "en": "A file slipped in after signing gets caught before load" },
-      "body": {
-        "zh": "有人在一个看起来靠谱的 Skill 里偷偷多塞一个文件、改一行代码，光看目录看不出来。attestload 加载前把整份内容重新核对一遍：多一个文件、少一个字节都对不上，直接拒绝运行。",
-        "en": "Someone slips an extra file or changes one line inside a Skill that looks legit — invisible to the eye. attestload re-checks the whole thing before load: one extra file or one changed byte won't match, and it gets refused."
+      "title": {
+        "en": "A loader decision",
+        "zh": "加载入口决策"
       },
-      "chips": ["› 多一个文件就拒", "› 改一个字节也跑不动"]
+      "body": {
+        "en": "guardLoad throws LoadRefused when verification or policy refuses the artifact.",
+        "zh": "校验或策略拒绝产物时，guardLoad 抛出 LoadRefused。"
+      }
+    }
+  ],
+  "demo": {
+    "title": {
+      "en": "Run it on a complete example",
+      "zh": "运行完整示例"
+    },
+    "note": {
+      "en": "This complete example creates a temporary skill and key, signs with local Ed25519, verifies it, then modifies the file. It does not contact Fulcio or Rekor.",
+      "zh": "完整示例创建临时 Skill 和密钥，使用本地 Ed25519 签名、验证，再修改文件。不调用 Fulcio 或 Rekor。"
+    },
+    "source": "https://github.com/SuperMarioYL/attestload/blob/main/docs/demo-results.json",
+    "steps": [
+      {
+        "label": "Recorded run",
+        "body": "Local Ed25519 signing and tamper detection on temporary synthetic skill files; no Sigstore or publisher trust claim.",
+        "command": "node examples/presentation-demo.mjs",
+        "output": "unsigned: UNSIGNED\nsigning mode: ed25519\nsigned: VERIFIED\nmodified: TAMPERED\nScope: local Ed25519 integrity checks; no Sigstore network or trusted-publisher assertion.",
+        "image": "/assets/presentation/demo-0-light.svg",
+        "imageDark": "/assets/presentation/demo-0-dark.svg"
+      }
+    ]
+  },
+  "quickstart": {
+    "title": {
+      "en": "Try it locally",
+      "zh": "本地上手"
+    },
+    "body": {
+      "en": "This complete example creates a temporary skill and key, signs with local Ed25519, verifies it, then modifies the file. It does not contact Fulcio or Rekor.",
+      "zh": "完整示例创建临时 Skill 和密钥，使用本地 Ed25519 签名、验证，再修改文件。不调用 Fulcio 或 Rekor。"
+    },
+    "steps": [
+      {
+        "title": {
+          "en": "Install from source",
+          "zh": "从源码安装"
+        },
+        "code": "git clone https://github.com/SuperMarioYL/attestload.git\ncd attestload\nnpm ci\nnpm run build"
+      },
+      {
+        "title": {
+          "en": "Run the included example",
+          "zh": "运行随仓示例"
+        },
+        "code": "node examples/presentation-demo.mjs"
+      }
+    ]
+  },
+  "limitations": [
+    {
+      "en": "Signature validity and content integrity do not establish that code is harmless. Review what the skill can execute.",
+      "zh": "签名有效和内容完整不等于代码无害，仍需审查 Skill 能执行的行为。"
     },
     {
-      "title": { "zh": "每次提交前自动把关，不用记得去查", "en": "Checked on every commit — you don't have to remember" },
-      "body": {
-        "zh": "靠人记得「装前先验」不现实。attestload 往你的仓库装一个提交前的钩子，每次提交自动核对，有人动了手脚提交就被挡下——本地运行，无需自建服务。",
-        "en": "Relying on people to 'check before install' doesn't scale. attestload drops a pre-commit hook in your repo that re-checks every commit automatically — if anyone touched something, the commit gets blocked. It runs locally, with no service of your own to stand up."
-      },
-      "chips": ["› 提交前自动核对", "› 本地运行 · 无需自建服务"]
+      "en": "The demo validates local signing only; Sigstore transparency-log and identity flows were not exercised.",
+      "zh": "示例仅验证本地签名，没有运行 Sigstore 透明日志和身份流程。"
+    },
+    {
+      "en": "A guarded check does not prevent later file changes unless the caller controls the check-to-execution boundary.",
+      "zh": "如果调用方没有控制检查到执行之间的边界，检查通过后文件仍可能变化。"
     }
   ],
   "scene": {
-    "kind": "hub-nodes",
-    "nodes": ["subject", "sbom", "files", "provenance", "signature"]
+    "kind": "neon-graph",
+    "fallback": "/assets/presentation/scene-dark.svg",
+    "fallbackLight": "/assets/presentation/scene-light.svg"
   },
-  "cta": {
-    "headline": { "zh": "让 agent 加载前先过这一关", "en": "Make your agent pass this gate before it loads anything" },
-    "sub": {
-      "zh": "Apache-2.0 许可，一行命令装好：签名一次点击进公开透明日志，冷启动有名单兜底，每次提交自动把关，被改过或没签名的代码加载前一律挡下。",
-      "en": "Apache-2.0 licensed, one line to install: signatures are one click into a public transparency log, the cold start is covered by a verified list, every commit is checked, and anything tampered or unsigned is blocked before load."
+  "story": {
+    "intro": {
+      "title": {
+        "en": "A concrete task",
+        "zh": "从实际任务出发"
+      },
+      "body": {
+        "en": "A directory can change between review and installation. A signed manifest records the reviewed file set, while verification detects changed content and policy decides which signer identities your workflow accepts.",
+        "zh": "目录内容可能在审查和安装之间发生变化。签名清单记录文件集合，验证过程发现内容变更，策略则决定工作流接受哪些签名身份。"
+      }
     },
-    "button": { "zh": "在 GitHub 查看", "en": "View on GitHub" }
-  },
-  "footer": {
-    "tag": {
-      "zh": "Skill 装进 Agent 前的那道关卡",
-      "en": "The gate a Skill passes before your agent loads it"
-    }
-  },
-  "meta": {
-    "content_version": "v0.13.0",
-    "generated_at": "2026-09-07T18:47:00Z",
-    "web_factory_ref": "v1.1"
+    "sections": [
+      {
+        "title": {
+          "en": "Follow the operation",
+          "zh": "处理过程"
+        },
+        "body": {
+          "en": "manifest.ts walks files into a content-addressed list. sbom.ts derives file-level or supported lockfile metadata; attest.ts adds provenance and signs canonical JSON. verify.ts recomputes the content and verifies the signature. policy.ts applies provenance and bound-signer rules; loader-guard.ts exposes the result to the caller.",
+          "zh": "manifest.ts 将文件整理为带摘要的清单，sbom.ts 提取文件级或支持的锁文件元数据，attest.ts 加入来源信息并为规范化 JSON 签名。verify.ts 重新计算内容并验签，policy.ts 检查来源和绑定的签名身份，loader-guard.ts 向调用方提供结果。"
+        },
+        "image": {
+          "light": "/assets/presentation/process-light.svg",
+          "dark": "/assets/presentation/process-dark.svg",
+          "alt": {
+            "en": "Follow the operation",
+            "zh": "处理过程"
+          }
+        }
+      },
+      {
+        "title": {
+          "en": "Directory facts feed a policy-controlled load check",
+          "zh": "目录事实进入加载策略检查"
+        },
+        "body": {
+          "en": "manifest.ts walks files into a content-addressed list. sbom.ts derives file-level or supported lockfile metadata; attest.ts adds provenance and signs canonical JSON. verify.ts recomputes the content and verifies the signature. policy.ts applies provenance and bound-signer rules; loader-guard.ts exposes the result to the caller.",
+          "zh": "manifest.ts 将文件整理为带摘要的清单，sbom.ts 提取文件级或支持的锁文件元数据，attest.ts 加入来源信息并为规范化 JSON 签名。verify.ts 重新计算内容并验签，policy.ts 检查来源和绑定的签名身份，loader-guard.ts 向调用方提供结果。"
+        },
+        "image": {
+          "light": "/assets/presentation/architecture-light.svg",
+          "dark": "/assets/presentation/architecture-dark.svg",
+          "alt": {
+            "en": "Directory facts feed a policy-controlled load check",
+            "zh": "目录事实进入加载策略检查"
+          }
+        }
+      },
+      {
+        "title": {
+          "en": "Connect the pieces",
+          "zh": "输入与输出"
+        },
+        "body": {
+          "en": "A verifier only gates loading when the application or CI workflow calls it and honors its result. It does not automatically intercept every agent. SPDX-lite and SLSA-lite describe the repository’s reduced metadata formats; they are not claims of full standards certification.",
+          "zh": "只有应用或 CI 主动调用并遵循验证结果，才能在加载前形成检查。工具不会自动拦截所有 Agent。SPDX-lite 和 SLSA-lite 表示本仓库的精简元数据格式，不代表完整标准认证。"
+        },
+        "image": {
+          "light": "/assets/presentation/integrations-light.svg",
+          "dark": "/assets/presentation/integrations-dark.svg",
+          "alt": {
+            "en": "Connect the pieces",
+            "zh": "输入与输出"
+          }
+        }
+      }
+    ],
+    "details": [
+      {
+        "title": {
+          "en": "Configuration",
+          "zh": "配置"
+        },
+        "body": {
+          "en": "Policy supports require_provenance, require_signature, allowed_identities and use_allowlist. Pin Ed25519 identities as ed25519:<SPKI-DER SHA-256>; Sigstore identities come from the verified certificate SAN. With no allowed_identities restriction, a valid self-signed local key does not establish a trusted publisher. Cold-start allowlisting requires a present intact unsigned manifest and a matching pinned artifact digest; a name-only entry is insufficient. --sigstore requires a usable OIDC token and network access; default signing may fall back to local Ed25519.",
+          "zh": "策略支持 require_provenance、require_signature、allowed_identities 和 use_allowlist。Ed25519 身份使用 ed25519:<SPKI-DER SHA-256> 固定；Sigstore 身份来自已验证证书的 SAN。未限制 allowed_identities 时，有效的自签本地密钥并不能证明可信发布者。冷启动白名单要求现有完整但未签名的清单，以及匹配的固定产物摘要；仅名称不够。--sigstore 需要可用 OIDC Token 和网络，默认签名可能回退到本地 Ed25519。"
+        }
+      },
+      {
+        "title": {
+          "en": "Further use",
+          "zh": "进一步使用"
+        },
+        "body": {
+          "en": "attest writes .attestload/attestation.json beside the files. verify returns 0 when policy accepts and 1 when blocked. The unsigned example intentionally blocks. For an application, import guardLoad from attestload and await it before the application executes or imports the directory’s code; checkLoad returns a decision without throwing.",
+          "zh": "attest 将 .attestload/attestation.json 写在目录中。verify 在策略接受时返回 0，被拒绝时返回 1，未签名示例应被拒绝。应用可从 attestload 导入 guardLoad，在执行或导入目录代码之前 await；checkLoad 返回决策而不抛异常。"
+        },
+        "code": "node dist/cli.js attest ./examples/signed-skill --kind skill\nnode dist/cli.js verify ./examples/signed-skill --json\nnode dist/cli.js verify ./examples/unsigned-skill --json"
+      }
+    ]
   }
 }

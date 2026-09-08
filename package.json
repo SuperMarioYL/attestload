@@ -1,7 +1,7 @@
 {
   "name": "attestload",
   "version": "0.13.0",
-  "description": "Attest-before-load gate for coding agents: sign AI agent Skills and MCP servers into verifiable SBOM + provenance attestations, and refuse to load unattested code.",
+  "description": "Sign and verify agent skill or MCP directories with file manifests, SBOM metadata, provenance and configurable signer policies.",
   "type": "module",
   "license": "Apache-2.0",
   "author": "SuperMarioYL",

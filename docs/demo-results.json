@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "source_revision": "e618644c8b68a0d1692191bf2a774cef2d5edc53",
+  "scope": "Local Ed25519 signing and tamper detection on temporary synthetic skill files; no Sigstore or publisher trust claim.",
+  "steps": [
+    {
+      "label": "Recorded run",
+      "body": "Local Ed25519 signing and tamper detection on temporary synthetic skill files; no Sigstore or publisher trust claim.",
+      "command": "node examples/presentation-demo.mjs",
+      "output": "unsigned: UNSIGNED\nsigning mode: ed25519\nsigned: VERIFIED\nmodified: TAMPERED\nScope: local Ed25519 integrity checks; no Sigstore network or trusted-publisher assertion."
+    }
+  ]
+}

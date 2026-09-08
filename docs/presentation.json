@@ -1,0 +1,94 @@
+{
+  "name": "AttestLoad",
+  "tagline": "Check what you are about to load",
+  "architecture": {
+    "title": "Directory facts feed a policy-controlled load check",
+    "nodes": [
+      {
+        "title": "Directory manifest",
+        "detail": "files, modes and symlinks"
+      },
+      {
+        "title": "SBOM + provenance",
+        "detail": "file or lockfile metadata"
+      },
+      {
+        "title": "Signature",
+        "detail": "Ed25519 or Sigstore"
+      },
+      {
+        "title": "Verify + policy",
+        "detail": "digest and signer checks"
+      },
+      {
+        "title": "Loader guard",
+        "detail": "allow or LoadRefused"
+      }
+    ],
+    "edges": [
+      [
+        0,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        4
+      ]
+    ]
+  },
+  "process": {
+    "title": "From input to a useful result",
+    "steps": [
+      {
+        "title": "Create skill",
+        "detail": "one synthetic SKILL.md"
+      },
+      {
+        "title": "Verify unsigned",
+        "detail": "UNSIGNED"
+      },
+      {
+        "title": "Sign locally",
+        "detail": "VERIFIED"
+      },
+      {
+        "title": "Modify content",
+        "detail": "TAMPERED"
+      }
+    ],
+    "result": "Local signing changes UNSIGNED to VERIFIED; editing the file produces TAMPERED."
+  },
+  "integrations": {
+    "title": "Supported input and output routes",
+    "items": [
+      {
+        "title": "Skill directories",
+        "detail": "file-manifest SBOM"
+      },
+      {
+        "title": "MCP directories",
+        "detail": "supported lockfile SBOM"
+      },
+      {
+        "title": "CLI / CI",
+        "detail": "JSON and exit codes"
+      },
+      {
+        "title": "Loader API",
+        "detail": "guardLoad / checkLoad"
+      },
+      {
+        "title": "Sigstore",
+        "detail": "optional keyless signing"
+      }
+    ]
+  }
+}
